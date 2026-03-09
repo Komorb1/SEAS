@@ -8,6 +8,7 @@ import {
   MapPinned,
   Router,
   ShieldAlert,
+  User,
 } from "lucide-react";
 
 const navItems = [
@@ -30,6 +31,11 @@ const navItems = [
     label: "Alerts",
     href: "/alerts",
     icon: ShieldAlert,
+  },
+  {
+    label: "Profile",
+    href: "/profile",
+    icon: User,
   },
 ];
 

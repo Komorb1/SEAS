@@ -1,15 +1,10 @@
-export const runtime = "nodejs";
-
 export async function POST() {
-  const res = Response.json({ message: "Logged out" });
+  const response = Response.json({ message: "Logout successful" });
 
-  // Clear cookie by expiring it immediately
-  res.headers.append(
+  response.headers.append(
     "Set-Cookie",
-    `auth_token=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax${
-      process.env.NODE_ENV === "production" ? "; Secure" : ""
-    }`
+    "auth_token=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax"
   );
 
-  return res;
+  return response;
 }
