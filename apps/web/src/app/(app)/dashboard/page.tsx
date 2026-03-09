@@ -28,10 +28,12 @@ const recentAlerts = [
 
 export default function DashboardPage() {
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <section>
-        <h2 className="text-2xl font-semibold tracking-tight">Dashboard</h2>
-        <p className="mt-1 text-sm text-slate-400">
+        <h2 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">
+          Dashboard
+        </h2>
+        <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
           Overview of sites, devices, and emergency activity.
         </p>
       </section>
@@ -63,14 +65,16 @@ export default function DashboardPage() {
         />
       </section>
 
-      <section className="rounded-2xl border border-slate-800 bg-slate-900">
-        <div className="border-b border-slate-800 px-5 py-4">
-          <h3 className="text-lg font-semibold">Recent Events</h3>
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+            Recent Events
+          </h3>
         </div>
 
         <div className="overflow-x-auto">
           <table className="min-w-full text-sm">
-            <thead className="bg-slate-950/40 text-left text-slate-400">
+            <thead className="bg-slate-100 text-left text-slate-600 dark:bg-slate-950/40 dark:text-slate-400">
               <tr>
                 <th className="px-5 py-3 font-medium">Alert ID</th>
                 <th className="px-5 py-3 font-medium">Site</th>
@@ -79,16 +83,32 @@ export default function DashboardPage() {
                 <th className="px-5 py-3 font-medium">Time</th>
               </tr>
             </thead>
+
             <tbody>
               {recentAlerts.map((alert) => (
-                <tr key={alert.id} className="border-t border-slate-800">
-                  <td className="px-5 py-4 font-medium text-white">{alert.id}</td>
-                  <td className="px-5 py-4 text-slate-300">{alert.site}</td>
-                  <td className="px-5 py-4 text-slate-300">{alert.device}</td>
+                <tr
+                  key={alert.id}
+                  className="border-t border-slate-200 transition hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/40"
+                >
+                  <td className="px-5 py-4 font-medium text-slate-900 dark:text-white">
+                    {alert.id}
+                  </td>
+
+                  <td className="px-5 py-4 text-slate-700 dark:text-slate-300">
+                    {alert.site}
+                  </td>
+
+                  <td className="px-5 py-4 text-slate-700 dark:text-slate-300">
+                    {alert.device}
+                  </td>
+
                   <td className="px-5 py-4">
                     <StatusBadge status={alert.status} />
                   </td>
-                  <td className="px-5 py-4 text-slate-400">{alert.time}</td>
+
+                  <td className="px-5 py-4 text-slate-500 dark:text-slate-400">
+                    {alert.time}
+                  </td>
                 </tr>
               ))}
             </tbody>

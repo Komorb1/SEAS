@@ -52,9 +52,11 @@ export function PasswordForm() {
   }
 
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
-      <h2 className="text-xl font-semibold text-white">Change Password</h2>
-      <p className="mt-1 text-sm text-slate-400">
+    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:shadow-md dark:border-slate-800 dark:bg-slate-900">
+      <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+        Change Password
+      </h2>
+      <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
         Update your password to keep your account secure.
       </p>
 
@@ -81,13 +83,13 @@ export function PasswordForm() {
         />
 
         {errorMessage ? (
-          <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-300">
             {errorMessage}
           </div>
         ) : null}
 
         {successMessage ? (
-          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-600 dark:text-emerald-300">
             {successMessage}
           </div>
         ) : null}

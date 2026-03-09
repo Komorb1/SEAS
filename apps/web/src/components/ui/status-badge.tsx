@@ -5,10 +5,14 @@ type StatusBadgeProps = {
 };
 
 const statusStyles: Record<StatusType, string> = {
-  online: "bg-emerald-500/15 text-emerald-400 border-emerald-500/20",
-  offline: "bg-slate-500/15 text-slate-300 border-slate-500/20",
-  warning: "bg-amber-500/15 text-amber-400 border-amber-500/20",
-  critical: "bg-red-500/15 text-red-400 border-red-500/20",
+  online:
+    "border-emerald-500/20 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+  offline:
+    "border-slate-300 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300",
+  warning:
+    "border-amber-500/20 bg-amber-500/10 text-amber-600 dark:text-amber-400",
+  critical:
+    "border-red-500/20 bg-red-500/10 text-red-600 dark:text-red-400",
 };
 
 export function StatusBadge({ status }: StatusBadgeProps) {

@@ -53,9 +53,11 @@ export function ProfileForm({ initialValues }: ProfileFormProps) {
   }
 
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
-      <h2 className="text-xl font-semibold text-white">Profile Information</h2>
-      <p className="mt-1 text-sm text-slate-400">
+    <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm transition hover:shadow-md dark:border-slate-800 dark:bg-slate-900">
+      <h2 className="text-xl font-semibold text-slate-900 dark:text-white">
+        Profile Information
+      </h2>
+      <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
         Update your personal account information.
       </p>
 
@@ -68,16 +70,16 @@ export function ProfileForm({ initialValues }: ProfileFormProps) {
         />
 
         <div>
-          <label className="mb-2 block text-sm font-medium text-slate-200">
+          <label className="mb-2 block text-sm font-medium text-slate-700 dark:text-slate-200">
             Username
           </label>
           <input
             type="text"
             value={initialValues.username}
             disabled
-            className="w-full rounded-xl border border-slate-800 bg-slate-800 px-4 py-3 text-sm text-slate-400 outline-none"
+            className="w-full rounded-xl border border-slate-300 bg-slate-100 px-4 py-3 text-sm text-slate-500 outline-none dark:border-slate-800 dark:bg-slate-800 dark:text-slate-400"
           />
-          <p className="mt-2 text-sm text-slate-500">
+          <p className="mt-2 text-sm text-slate-500 dark:text-slate-500">
             Username cannot be changed.
           </p>
         </div>
@@ -97,13 +99,13 @@ export function ProfileForm({ initialValues }: ProfileFormProps) {
         />
 
         {errorMessage ? (
-          <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+          <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-600 dark:text-red-300">
             {errorMessage}
           </div>
         ) : null}
 
         {successMessage ? (
-          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+          <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-600 dark:text-emerald-300">
             {successMessage}
           </div>
         ) : null}

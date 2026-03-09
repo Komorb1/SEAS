@@ -47,7 +47,7 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-950 px-6 py-12 text-slate-100">
+    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-6 py-12 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       <div className="w-full max-w-md">
         <Link href="/" className="mb-6 inline-flex items-center gap-3">
           <div className="rounded-xl bg-red-600/15 p-2">

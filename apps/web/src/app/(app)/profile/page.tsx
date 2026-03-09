@@ -28,8 +28,10 @@ export default async function ProfilePage() {
   return (
     <div className="space-y-6">
       <section>
-        <h2 className="text-2xl font-semibold tracking-tight">Profile</h2>
-        <p className="mt-1 text-sm text-slate-400">
+        <h2 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">
+          Profile
+        </h2>
+        <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
           Manage your account information and password.
         </p>
       </section>
