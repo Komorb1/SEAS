@@ -10,11 +10,11 @@ const LoginSchema = z.object({
   password: z.string().min(1, "Password required"),
 });
 
-const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET);
-
-if (!JWT_SECRET) {
+const jwtSecretValue = process.env.JWT_SECRET;
+if (!jwtSecretValue) {
   throw new Error("JWT_SECRET is not set");
 }
+const JWT_SECRET = new TextEncoder().encode(jwtSecretValue);
 
 export async function POST(req: Request) {
   try {

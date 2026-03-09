@@ -1,98 +1,118 @@
 "use client";
 
-import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { FormEvent, useState } from "react";
+import { BellRing } from "lucide-react";
+import { AuthCard } from "@/components/auth/auth-card";
+import { AuthInput } from "@/components/auth/auth-input";
+import { loginUser } from "@/lib/api/auth";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [identifier, setIdentifier] = useState(""); // username or email later
-  const [password, setPassword] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    setIsSubmitting(true);
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setErrorMessage("");
+
+    if (!identifier.trim() || !password.trim()) {
+      setErrorMessage("Please fill in all required fields.");
+      return;
+    }
 
     try {
-      const res = await fetch("/api/auth/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ identifier, password }),
+      setIsSubmitting(true);
+
+      await loginUser({
+        identifier: identifier.trim(),
+        password,
       });
 
-      const data = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        setError(data?.error ?? "Login failed");
-        return;
-      }
-
       router.push("/dashboard");
-    } catch {
-      setError("Network error. Please try again.");
+      router.refresh();
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error
+          ? error.message
+          : "Unable to sign in. Please try again."
+      );
     } finally {
       setIsSubmitting(false);
     }
   }
 
   return (
-    <main style={{ maxWidth: 420, margin: "40px auto", padding: 16 }}>
-      <h1 style={{ fontSize: 28, fontWeight: 700, marginBottom: 16 }}>
-        Login
-      </h1>
+    <main className="flex min-h-screen items-center justify-center bg-slate-950 px-6 py-12 text-slate-100">
+      <div className="w-full max-w-md">
+        <Link href="/" className="mb-6 inline-flex items-center gap-3">
+          <div className="rounded-xl bg-red-600/15 p-2">
+            <BellRing className="h-5 w-5 text-red-400" />
+          </div>
+          <div>
+            <p className="text-lg font-semibold tracking-tight">SEAS</p>
+            <p className="text-xs text-slate-400">
+              Smart Emergency Alert System
+            </p>
+          </div>
+        </Link>
 
-      {error && (
-        <div
-          role="alert"
-          style={{
-            padding: 12,
-            borderRadius: 8,
-            border: "1px solid #ccc",
-            marginBottom: 12,
-          }}
+        <AuthCard
+          title="Sign in"
+          description="Access your SEAS dashboard to monitor sites, devices, and emergency events."
+          footer={
+            <p className="text-sm text-slate-400">
+              Don&apos;t have an account?{" "}
+              <Link
+                href="/register"
+                className="font-medium text-red-400 hover:text-red-300"
+              >
+                Register
+              </Link>
+            </p>
+          }
         >
-          {error}
-        </div>
-      )}
+          <form className="space-y-4" onSubmit={handleSubmit}>
+            <AuthInput
+              label="Username or Email"
+              type="text"
+              name="identifier"
+              placeholder="Enter your username or email"
+              value={identifier}
+              onChange={(event) => setIdentifier(event.target.value)}
+              autoComplete="username"
+            />
 
-      <form onSubmit={onSubmit} style={{ display: "grid", gap: 10 }}>
-        <label>
-          Username or Email
-          <input
-            value={identifier}
-            onChange={(e) => setIdentifier(e.target.value)}
-            required
-            style={{ width: "100%", padding: 10, borderRadius: 8 }}
-          />
-        </label>
+            <AuthInput
+              label="Password"
+              type="password"
+              name="password"
+              placeholder="Enter your password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
+            />
 
-        <label>
-          Password
-          <input
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            required
-            style={{ width: "100%", padding: 10, borderRadius: 8 }}
-          />
-        </label>
+            {errorMessage ? (
+              <div className="rounded-xl border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                {errorMessage}
+              </div>
+            ) : null}
 
-        <button
-          type="submit"
-          disabled={isSubmitting}
-          style={{
-            padding: 12,
-            borderRadius: 10,
-            border: "1px solid #ccc",
-            cursor: isSubmitting ? "not-allowed" : "pointer",
-            fontWeight: 600,
-          }}
-        >
-          {isSubmitting ? "Logging in..." : "Login"}
-        </button>
-      </form>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className="w-full rounded-xl bg-red-600 px-4 py-3 text-sm font-medium text-white transition hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-70"
+            >
+              {isSubmitting ? "Signing in..." : "Sign in"}
+            </button>
+          </form>
+        </AuthCard>
+      </div>
     </main>
   );
 }
