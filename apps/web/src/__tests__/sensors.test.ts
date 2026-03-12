@@ -149,9 +149,9 @@ describe("Sensors management (Task #9)", () => {
   afterEach(async () => {
     delete process.env.MOCK_USER_ID;
 
-    if (sensorId) {
+    if (deviceId) {
       await prisma.sensor.deleteMany({
-        where: { sensor_id: sensorId },
+        where: { device_id: deviceId },
       });
     }
 
@@ -193,7 +193,7 @@ describe("Sensors management (Task #9)", () => {
     process.env.MOCK_USER_ID = OWNER_ID;
 
     const req = makeReq("POST", {
-      sensor_type: "temperature",
+      sensor_type: "gas",
       location_label: "Living room",
     });
 
@@ -208,7 +208,7 @@ describe("Sensors management (Task #9)", () => {
       /^[0-9a-f-]{8}-[0-9a-f-]{4}-[0-9a-f-]{4}-[0-9a-f-]{4}-[0-9a-f-]{12}$/i,
     );
     expect(body.sensor.device_id).toBe(deviceId);
-    expect(body.sensor.sensor_type).toBe("temperature");
+    expect(body.sensor.sensor_type).toBe("gas");
     expect(body.sensor.is_enabled).toBe(true);
   });
 
