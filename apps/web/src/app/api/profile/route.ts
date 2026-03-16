@@ -1,10 +1,20 @@
 import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { verifyAuthToken } from "@/lib/jwt";
-import { Prisma } from "@prisma/client";
 import { z } from "zod";
 
 export const runtime = "nodejs";
+
+function isPrismaKnownError(
+  error: unknown
+): error is { code: string; meta?: Record<string, unknown> } {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    typeof (error as { code?: unknown }).code === "string"
+  );
+}
 
 const UpdateProfileSchema = z.object({
   full_name: z.string().min(2, "Full name is required"),
@@ -111,7 +121,7 @@ export async function PATCH(req: Request) {
 
     return Response.json({ user, message: "Profile updated successfully" });
   } catch (error) {
-    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+    if (isPrismaKnownError(error) && error.code === "P2002") {
       if (error.code === "P2002") {
         return Response.json(
           { error: "This email is already in use." },
