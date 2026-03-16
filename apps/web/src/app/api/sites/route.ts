@@ -1,8 +1,14 @@
 import { z } from "zod";
+import { PrismaClient } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/auth-request";
 
 export const runtime = "nodejs";
+
+type TxClient = Omit<
+  PrismaClient,
+  "$connect" | "$disconnect" | "$on" | "$transaction" | "$extends"
+>;
 
 const CreateSiteSchema = z.object({
   name: z.string().min(2, "Site name is required"),
@@ -26,7 +32,7 @@ export async function POST(req: Request) {
 
     const { name, address_line, city, country } = parsed.data;
 
-    const result = await prisma.$transaction(async (tx) => {
+      const result = await prisma.$transaction(async (tx: TxClient) => {
       const site = await tx.site.create({
         data: { name, address_line, city, country },
         select: {
