@@ -6,8 +6,9 @@
   ],
   "scripts": {
     "dev:web": "npm -w web run dev",
-    "build:web": "npm -w web run build",
+    "build:web": "npm run prisma:generate && npm -w web run build",
     "lint:web": "npm -w web run lint",
+    "postinstall": "prisma generate",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:studio": "prisma studio",
