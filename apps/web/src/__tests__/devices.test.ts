@@ -46,10 +46,17 @@ function makeSerial(prefix = "SN-TEST") {
 describe("Devices management (Task #8)", () => {
   const MOCK_USER_ID = "00000000-0000-0000-0000-000000000002";
   const cookie = "auth_token=user:0002";
+  const TEST_SITE_NAME = "Device Test Site";
+  const TEST_USERNAME = "mock_user_devices";
+  const TEST_EMAIL = "mock_user_devices@example.com";
 
   let siteId = "";
 
   async function ensureOwnerMembership() {
+    if (!siteId) {
+      throw new Error("siteId was not initialized before ensureOwnerMembership()");
+    }
+
     await prisma.siteUser.upsert({
       where: {
         site_id_user_id: {
@@ -88,19 +95,107 @@ describe("Devices management (Task #8)", () => {
     };
   }
 
+  async function cleanupDeviceTestData() {
+    await prisma.alertNotification.deleteMany({
+      where: {
+        event: {
+          site: {
+            name: TEST_SITE_NAME,
+          },
+        },
+      },
+    });
+
+    await prisma.sensorReading.deleteMany({
+      where: {
+        OR: [
+          {
+            sensor: {
+              device: {
+                site: {
+                  name: TEST_SITE_NAME,
+                },
+              },
+            },
+          },
+          {
+            event: {
+              site: {
+                name: TEST_SITE_NAME,
+              },
+            },
+          },
+        ],
+      },
+    });
+
+    await prisma.emergencyEvent.deleteMany({
+      where: {
+        site: {
+          name: TEST_SITE_NAME,
+        },
+      },
+    });
+
+    await prisma.sensor.deleteMany({
+      where: {
+        device: {
+          site: {
+            name: TEST_SITE_NAME,
+          },
+        },
+      },
+    });
+
+    await prisma.device.deleteMany({
+      where: {
+        site: {
+          name: TEST_SITE_NAME,
+        },
+      },
+    });
+
+    await prisma.siteUser.deleteMany({
+      where: {
+        OR: [
+          {
+            site: {
+              name: TEST_SITE_NAME,
+            },
+          },
+          {
+            user_id: MOCK_USER_ID,
+          },
+        ],
+      },
+    });
+
+    await prisma.site.deleteMany({
+      where: {
+        name: TEST_SITE_NAME,
+      },
+    });
+
+    await prisma.user.deleteMany({
+      where: {
+        OR: [
+          { user_id: MOCK_USER_ID },
+          { username: TEST_USERNAME },
+          { email: TEST_EMAIL },
+        ],
+      },
+    });
+  }
+
   beforeAll(async () => {
-    // Cleanup in dependency-safe order
-    await prisma.device.deleteMany({});
-    await prisma.siteUser.deleteMany({ where: { user_id: MOCK_USER_ID } });
-    await prisma.site.deleteMany({ where: { name: "Device Test Site" } });
-    await prisma.user.deleteMany({ where: { user_id: MOCK_USER_ID } });
+    await cleanupDeviceTestData();
 
     await prisma.user.upsert({
       where: { user_id: MOCK_USER_ID },
       update: {
         full_name: "Mock User",
-        username: "mock_user_devices",
-        email: "mock_user_devices@example.com",
+        username: TEST_USERNAME,
+        email: TEST_EMAIL,
         phone: null,
         password_hash: "x",
         status: "active",
@@ -108,8 +203,8 @@ describe("Devices management (Task #8)", () => {
       create: {
         user_id: MOCK_USER_ID,
         full_name: "Mock User",
-        username: "mock_user_devices",
-        email: "mock_user_devices@example.com",
+        username: TEST_USERNAME,
+        email: TEST_EMAIL,
         phone: null,
         password_hash: "x",
         status: "active",
@@ -117,7 +212,7 @@ describe("Devices management (Task #8)", () => {
     });
 
     const site = await prisma.site.create({
-      data: { name: "Device Test Site", status: "active" },
+      data: { name: TEST_SITE_NAME, status: "active" },
       select: { site_id: true },
     });
 
@@ -127,24 +222,15 @@ describe("Devices management (Task #8)", () => {
   });
 
   beforeEach(async () => {
-    // Keep auth state stable across tests
     await ensureOwnerMembership();
   });
 
   afterEach(async () => {
-    // Reset role after tests that change it
     await ensureOwnerMembership();
   });
 
   afterAll(async () => {
-    if (siteId) {
-      await prisma.device.deleteMany({ where: { site_id: siteId } });
-      await prisma.siteUser.deleteMany({ where: { site_id: siteId } });
-      await prisma.site.deleteMany({ where: { site_id: siteId } });
-    }
-
-    await prisma.siteUser.deleteMany({ where: { user_id: MOCK_USER_ID } });
-    await prisma.user.deleteMany({ where: { user_id: MOCK_USER_ID } });
+    await cleanupDeviceTestData();
   });
 
   test("register device under site (owner) returns secret once", async () => {

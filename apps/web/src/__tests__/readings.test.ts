@@ -30,9 +30,29 @@ describe("Sensor reading ingestion (Task #11)", () => {
 
   beforeAll(async () => {
     // Clean slate (child -> parent)
-    await prisma.sensorReading.deleteMany({
-      where: { sensor: { device_id: DEVICE_ID } },
+    await prisma.alertNotification.deleteMany({
+      where: {
+        event: {
+          OR: [{ site_id: SITE_ID }, { device_id: DEVICE_ID }],
+        },
+      },
     });
+
+    await prisma.sensorReading.deleteMany({
+      where: {
+        OR: [
+          { sensor: { device_id: DEVICE_ID } },
+          { event: { site_id: SITE_ID } },
+        ],
+      },
+    });
+
+    await prisma.emergencyEvent.deleteMany({
+      where: {
+        OR: [{ site_id: SITE_ID }, { device_id: DEVICE_ID }],
+      },
+    });
+
     await prisma.sensor.deleteMany({ where: { device_id: DEVICE_ID } });
     await prisma.device.deleteMany({ where: { device_id: DEVICE_ID } });
     await prisma.site.deleteMany({ where: { site_id: SITE_ID } });
@@ -69,7 +89,37 @@ describe("Sensor reading ingestion (Task #11)", () => {
   });
 
   afterAll(async () => {
-    if (sensorId) await prisma.sensor.deleteMany({ where: { sensor_id: sensorId } });
+    await prisma.alertNotification.deleteMany({
+      where: {
+        event: {
+          OR: [{ site_id: SITE_ID }, { device_id: DEVICE_ID }],
+        },
+      },
+    });
+
+    await prisma.sensorReading.deleteMany({
+      where: {
+        OR: [
+          ...(sensorId ? [{ sensor_id: sensorId }] : []),
+          { event: { site_id: SITE_ID } },
+        ],
+      },
+    });
+
+    await prisma.emergencyEvent.deleteMany({
+      where: {
+        OR: [
+          ...(sensorId ? [{ sensor_id: sensorId }] : []),
+          { device_id: DEVICE_ID },
+          { site_id: SITE_ID },
+        ],
+      },
+    });
+
+    if (sensorId) {
+      await prisma.sensor.deleteMany({ where: { sensor_id: sensorId } });
+    }
+
     await prisma.device.deleteMany({ where: { device_id: DEVICE_ID } });
     await prisma.site.deleteMany({ where: { site_id: SITE_ID } });
   });
@@ -86,9 +136,9 @@ describe("Sensor reading ingestion (Task #11)", () => {
 
     expect(res.status).toBe(201);
 
-    const body = await readJson<{ reading: { reading_id: string; received_at: string; quality_flag: string } }>(
-      res
-    );
+    const body = await readJson<{
+      reading: { reading_id: string; received_at: string; quality_flag: string };
+    }>(res);
 
     expect(body.reading.reading_id).toBeTruthy();
     expect(body.reading.received_at).toBeTruthy();
@@ -118,7 +168,9 @@ describe("Sensor reading ingestion (Task #11)", () => {
   });
 
   test("rejects requests without device token", async () => {
-    const res = await readingsPOST(asNextRequest(makeReq({ sensor_id: sensorId, value: 1 })));
+    const res = await readingsPOST(
+      asNextRequest(makeReq({ sensor_id: sensorId, value: 1 }))
+    );
     expect(res.status).toBe(401);
   });
 });
