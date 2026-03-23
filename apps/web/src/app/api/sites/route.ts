@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/auth-request";
+import { AuditActionType, AuditTargetType } from "@prisma/client";
+import { safeAuditLog } from "@/lib/audit";
 
 export const runtime = "nodejs";
 
@@ -31,30 +33,44 @@ export async function POST(req: Request) {
 
     const { name, address_line, city, country } = parsed.data;
 
-const result = await prisma.$transaction(async (tx: SitesTx) => {
-  const site = await tx.site.create({
-    data: { name, address_line, city, country },
-    select: {
-      site_id: true,
-      name: true,
-      address_line: true,
-      city: true,
-      country: true,
-      status: true,
-      created_at: true,
-    },
-  });
+    const result = await prisma.$transaction(async (tx: SitesTx) => {
+      const site = await tx.site.create({
+        data: { name, address_line, city, country },
+        select: {
+          site_id: true,
+          name: true,
+          address_line: true,
+          city: true,
+          country: true,
+          status: true,
+          created_at: true,
+        },
+      });
 
-  await tx.siteUser.create({
-    data: {
-      site_id: site.site_id,
+      await tx.siteUser.create({
+        data: {
+          site_id: site.site_id,
+          user_id: userId,
+          role: "owner",
+        },
+      });
+
+      return site;
+    });
+
+    await safeAuditLog({
       user_id: userId,
-      role: "owner",
-    },
-  });
-
-  return site;
-});
+      action_type: AuditActionType.other,
+      target_type: AuditTargetType.site,
+      target_id: result.site_id,
+      details: {
+        kind: "site_created",
+        name: result.name,
+        status: result.status,
+        city: result.city,
+        country: result.country,
+      },
+    });
 
     return Response.json({ site: result }, { status: 201 });
   } catch (err: unknown) {
@@ -93,7 +109,6 @@ export async function GET(req: Request) {
       orderBy: { created_at: "desc" },
     });
 
-    // flatten role (since query returns array of 1)
     const response = sites.map((s: (typeof sites)[number]) => ({
       ...s,
       my_role: s.site_users[0]?.role ?? "viewer",

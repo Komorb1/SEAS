@@ -2,6 +2,8 @@ import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { verifyAuthToken } from "@/lib/jwt";
 import { z } from "zod";
+import { AuditActionType, AuditTargetType } from "@prisma/client";
+import { safeAuditLog } from "@/lib/audit";
 
 export const runtime = "nodejs";
 
@@ -84,6 +86,7 @@ export async function PATCH(req: Request) {
     }
 
     const { full_name, email, phone } = parsed.data;
+    const normalizedPhone = phone ? phone : null;
 
     const existingUser = await prisma.user.findFirst({
       where: {
@@ -102,12 +105,40 @@ export async function PATCH(req: Request) {
       );
     }
 
+    const currentUser = await prisma.user.findUnique({
+      where: { user_id: userId },
+      select: {
+        user_id: true,
+        full_name: true,
+        email: true,
+        phone: true,
+      },
+    });
+
+    if (!currentUser) {
+      return Response.json({ error: "User not found" }, { status: 404 });
+    }
+
+    const changed_fields: string[] = [];
+
+    if (currentUser.full_name !== full_name) {
+      changed_fields.push("full_name");
+    }
+
+    if (currentUser.email !== email) {
+      changed_fields.push("email");
+    }
+
+    if (currentUser.phone !== normalizedPhone) {
+      changed_fields.push("phone");
+    }
+
     const user = await prisma.user.update({
       where: { user_id: userId },
       data: {
         full_name,
         email,
-        phone: phone ? phone : null,
+        phone: normalizedPhone,
       },
       select: {
         user_id: true,
@@ -119,15 +150,25 @@ export async function PATCH(req: Request) {
       },
     });
 
+    if (changed_fields.length > 0) {
+      await safeAuditLog({
+        user_id: userId,
+        action_type: AuditActionType.update_profile,
+        target_type: AuditTargetType.user,
+        target_id: userId,
+        details: {
+          changed_fields,
+        },
+      });
+    }
+
     return Response.json({ user, message: "Profile updated successfully" });
   } catch (error) {
     if (isPrismaKnownError(error) && error.code === "P2002") {
-      if (error.code === "P2002") {
-        return Response.json(
-          { error: "This email is already in use." },
-          { status: 409 }
-        );
-      }
+      return Response.json(
+        { error: "This email is already in use." },
+        { status: 409 }
+      );
     }
 
     console.error("Profile PATCH error:", error);

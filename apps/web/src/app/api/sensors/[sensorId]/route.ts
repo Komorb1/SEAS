@@ -1,7 +1,10 @@
 import { z } from "zod";
 import type { NextRequest } from "next/server";
+import { AuditActionType, AuditTargetType } from "@prisma/client";
+
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/auth-request";
+import { safeAuditLog } from "@/lib/audit";
 
 export const runtime = "nodejs";
 
@@ -15,9 +18,15 @@ const UpdateSensorSchema = z
     status: z.enum(["ok", "faulty", "disabled"]).optional(),
     location_label: z.string().min(1).max(120).nullable().optional(),
   })
-  .refine((v) => v.is_enabled !== undefined || v.status !== undefined || v.location_label !== undefined, {
-    message: "Provide at least one field to update",
-  });
+  .refine(
+    (v) =>
+      v.is_enabled !== undefined ||
+      v.status !== undefined ||
+      v.location_label !== undefined,
+    {
+      message: "Provide at least one field to update",
+    }
+  );
 
 function isOwnerOrAdmin(role: string): boolean {
   return role === "owner" || role === "admin";
@@ -39,7 +48,13 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
     const sensor = await prisma.sensor.findUnique({
       where: { sensor_id: sensorId },
-      select: { sensor_id: true, device_id: true },
+      select: {
+        sensor_id: true,
+        device_id: true,
+        is_enabled: true,
+        status: true,
+        location_label: true,
+      },
     });
 
     if (!sensor) {
@@ -64,12 +79,41 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       return Response.json({ error: "Forbidden" }, { status: 403 });
     }
 
+    const changed_fields: string[] = [];
+
+    if (
+      parsed.data.is_enabled !== undefined &&
+      parsed.data.is_enabled !== sensor.is_enabled
+    ) {
+      changed_fields.push("is_enabled");
+    }
+
+    if (
+      parsed.data.status !== undefined &&
+      parsed.data.status !== sensor.status
+    ) {
+      changed_fields.push("status");
+    }
+
+    if (
+      parsed.data.location_label !== undefined &&
+      parsed.data.location_label !== sensor.location_label
+    ) {
+      changed_fields.push("location_label");
+    }
+
     const updated = await prisma.sensor.update({
       where: { sensor_id: sensorId },
       data: {
-        ...(parsed.data.is_enabled !== undefined ? { is_enabled: parsed.data.is_enabled } : {}),
-        ...(parsed.data.status !== undefined ? { status: parsed.data.status } : {}),
-        ...(parsed.data.location_label !== undefined ? { location_label: parsed.data.location_label } : {}),
+        ...(parsed.data.is_enabled !== undefined
+          ? { is_enabled: parsed.data.is_enabled }
+          : {}),
+        ...(parsed.data.status !== undefined
+          ? { status: parsed.data.status }
+          : {}),
+        ...(parsed.data.location_label !== undefined
+          ? { location_label: parsed.data.location_label }
+          : {}),
       },
       select: {
         sensor_id: true,
@@ -78,6 +122,21 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
         location_label: true,
       },
     });
+
+    if (changed_fields.length > 0) {
+      await safeAuditLog({
+        user_id: userId,
+        action_type: AuditActionType.other,
+        target_type: AuditTargetType.sensor,
+        target_id: updated.sensor_id,
+        details: {
+          kind: "sensor_updated",
+          site_id: device.site_id,
+          device_id: sensor.device_id,
+          changed_fields,
+        },
+      });
+    }
 
     return Response.json({ sensor: updated }, { status: 200 });
   } catch (err: unknown) {

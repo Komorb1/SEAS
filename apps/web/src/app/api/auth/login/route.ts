@@ -2,6 +2,8 @@ import bcrypt from "bcrypt";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { SignJWT } from "jose";
+import { AuditActionType, AuditTargetType } from "@prisma/client";
+import { safeAuditLog } from "@/lib/audit";
 
 export const runtime = "nodejs";
 
@@ -58,13 +60,11 @@ export async function POST(req: Request) {
       );
     }
 
-    // Update last login timestamp
     await prisma.user.update({
       where: { user_id: user.user_id },
       data: { last_login_at: new Date() },
     });
 
-    // Create JWT (1 day expiration)
     const token = await new SignJWT({
       user_id: user.user_id,
       username: user.username,
@@ -82,6 +82,16 @@ export async function POST(req: Request) {
         process.env.NODE_ENV === "production" ? "; Secure" : ""
       }`
     );
+
+    await safeAuditLog({
+      user_id: user.user_id,
+      action_type: AuditActionType.login,
+      target_type: AuditTargetType.user,
+      target_id: user.user_id,
+      details: {
+        login_identifier_type: user.email === identifier ? "email" : "username",
+      },
+    });
 
     return response;
   } catch (err) {

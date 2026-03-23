@@ -1,9 +1,12 @@
 import { z } from "zod";
 import type { NextRequest } from "next/server";
+import { AuditActionType, AuditTargetType } from "@prisma/client";
+
 import { prisma } from "@/lib/prisma";
 import { requireDevice } from "@/lib/device-auth";
 import { evaluateReadingForEvent } from "@/lib/events/evaluate-reading";
 import { createAlertNotificationsForEvent } from "@/lib/alerts/create-alert-notifications";
+import { safeAuditLog } from "@/lib/audit";
 
 export const runtime = "nodejs";
 
@@ -105,15 +108,24 @@ export async function POST(req: NextRequest) {
         },
         select: {
           event_id: true,
+          site_id: true,
         },
         orderBy: {
           started_at: "desc",
         },
       });
 
-      const event =
-        existingOpenEvent ??
-        (await prisma.emergencyEvent.create({
+      if (existingOpenEvent) {
+        await prisma.sensorReading.update({
+          where: { reading_id: reading.reading_id },
+          data: {
+            event_id: existingOpenEvent.event_id,
+          },
+        });
+
+        createdEvent = existingOpenEvent;
+      } else {
+        const newEvent = await prisma.emergencyEvent.create({
           data: {
             site_id: sensor.device.site_id,
             device_id: sensor.device.device_id,
@@ -128,26 +140,48 @@ export async function POST(req: NextRequest) {
           select: {
             event_id: true,
             site_id: true,
+            event_type: true,
+            severity: true,
+            status: true,
+            title: true,
           },
-        }));
+        });
 
-      await prisma.sensorReading.update({
-        where: { reading_id: reading.reading_id },
-        data: {
-          event_id: event.event_id,
-        },
-      });
+        await prisma.sensorReading.update({
+          where: { reading_id: reading.reading_id },
+          data: {
+            event_id: newEvent.event_id,
+          },
+        });
 
-      if (!existingOpenEvent) {
         const notificationResult = await createAlertNotificationsForEvent({
-          eventId: event.event_id,
+          eventId: newEvent.event_id,
           siteId: sensor.device.site_id,
         });
 
         createdNotifications = notificationResult.created;
-      }
 
-      createdEvent = event;
+        await safeAuditLog({
+          event_id: newEvent.event_id,
+          action_type: AuditActionType.create_event,
+          target_type: AuditTargetType.event,
+          target_id: newEvent.event_id,
+          details: {
+            kind: "event_created_from_reading",
+            site_id: sensor.device.site_id,
+            device_id: sensor.device.device_id,
+            sensor_id: sensor.sensor_id,
+            sensor_type: sensor.sensor_type,
+            location_label: sensor.location_label,
+            event_type: newEvent.event_type,
+            severity: newEvent.severity,
+            status: newEvent.status,
+            notifications_created: createdNotifications,
+          },
+        });
+
+        createdEvent = newEvent;
+      }
     }
 
     return Response.json(

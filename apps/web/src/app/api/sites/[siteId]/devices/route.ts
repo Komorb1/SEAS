@@ -2,9 +2,11 @@ import { z } from "zod";
 import bcrypt from "bcrypt";
 import crypto from "crypto";
 import type { NextRequest } from "next/server";
+import { AuditActionType, AuditTargetType } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/auth-request";
+import { safeAuditLog } from "@/lib/audit";
 
 export const runtime = "nodejs";
 
@@ -35,7 +37,6 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       );
     }
 
-    // RBAC: owner/admin only
     const membership = await prisma.siteUser.findUnique({
       where: { site_id_user_id: { site_id: siteId, user_id: userId } },
       select: { role: true },
@@ -45,7 +46,6 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       return Response.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    // Generate one-time device secret, store only hash
     const deviceSecret = crypto.randomBytes(32).toString("hex");
     const secretHash = await bcrypt.hash(deviceSecret, 12);
 
@@ -67,10 +67,24 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       },
     });
 
+    await safeAuditLog({
+      user_id: userId,
+      action_type: AuditActionType.other,
+      target_type: AuditTargetType.device,
+      target_id: device.device_id,
+      details: {
+        kind: "device_registered",
+        site_id: device.site_id,
+        serial_number: device.serial_number,
+        device_type: device.device_type,
+        status: device.status,
+      },
+    });
+
     return Response.json(
       {
         device,
-        device_secret: deviceSecret, // returned ONCE
+        device_secret: deviceSecret,
       },
       { status: 201 }
     );
@@ -80,12 +94,13 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    // Unique constraint (serial_number)
-    // Prisma P2002 = Unique constraint failed
     if (typeof err === "object" && err !== null && "code" in err) {
       const code = (err as { code?: string }).code;
       if (code === "P2002") {
-        return Response.json({ error: "serial_number already exists" }, { status: 409 });
+        return Response.json(
+          { error: "serial_number already exists" },
+          { status: 409 }
+        );
       }
     }
 
@@ -99,7 +114,6 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     const userId = await requireUserId(req);
     const { siteId } = await ctx.params;
 
-    // RBAC: any member can list
     const membership = await prisma.siteUser.findUnique({
       where: { site_id_user_id: { site_id: siteId, user_id: userId } },
       select: { role: true },

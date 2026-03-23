@@ -3,6 +3,8 @@ import { cookies } from "next/headers";
 import { prisma } from "@/lib/prisma";
 import { verifyAuthToken } from "@/lib/jwt";
 import { z } from "zod";
+import { AuditActionType, AuditTargetType } from "@prisma/client";
+import { safeAuditLog } from "@/lib/audit";
 
 export const runtime = "nodejs";
 
@@ -78,6 +80,16 @@ export async function PATCH(req: Request) {
     await prisma.user.update({
       where: { user_id: userId },
       data: { password_hash },
+    });
+
+    await safeAuditLog({
+      user_id: userId,
+      action_type: AuditActionType.update_settings,
+      target_type: AuditTargetType.user,
+      target_id: userId,
+      details: {
+        kind: "password_changed",
+      },
     });
 
     return Response.json({ message: "Password changed successfully" });

@@ -89,14 +89,18 @@ enum AlertStatus {
 
 enum AuditActionType {
   create_event
+  update_event
   ack
   resolve
   login
+  logout
   update_settings
+  update_profile
   other
 }
 
 enum AuditTargetType {
+  user
   site
   device
   sensor

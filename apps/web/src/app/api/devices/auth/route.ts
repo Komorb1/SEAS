@@ -2,7 +2,10 @@ import bcrypt from "bcrypt";
 import { z } from "zod";
 import type { NextRequest } from "next/server";
 import { SignJWT } from "jose";
+import { AuditActionType, AuditTargetType } from "@prisma/client";
+
 import { prisma } from "@/lib/prisma";
+import { safeAuditLog } from "@/lib/audit";
 
 export const runtime = "nodejs";
 
@@ -34,7 +37,6 @@ function rateLimit(key: string, limit: number, windowMs: number) {
 }
 
 function getClientIp(req: NextRequest): string {
-  // Works behind proxies if they pass x-forwarded-for
   const xff = req.headers.get("x-forwarded-for");
   if (xff) return xff.split(",")[0]?.trim() || "unknown";
   return req.headers.get("x-real-ip") ?? "unknown";
@@ -55,27 +57,32 @@ export async function POST(req: NextRequest) {
 
     const { serial_number, secret } = parsed.data;
 
-    // Rate-limit per IP + serial
-    const rl = rateLimit(`${ip}:${serial_number}`, 10, 60_000); // 10/min
+    const rl = rateLimit(`${ip}:${serial_number}`, 10, 60_000);
     if (!rl.ok) {
       return Response.json(
         { error: "Too many attempts" },
-        { status: 429, headers: { "Retry-After": String(Math.ceil((rl.resetAt! - Date.now()) / 1000)) } }
+        {
+          status: 429,
+          headers: {
+            "Retry-After": String(Math.ceil((rl.resetAt! - Date.now()) / 1000)),
+          },
+        }
       );
     }
 
     const device = await prisma.device.findUnique({
       where: { serial_number },
-      select: { device_id: true, secret_hash: true, status: true, site_id: true },
+      select: {
+        device_id: true,
+        secret_hash: true,
+        status: true,
+        site_id: true,
+      },
     });
 
-    // Avoid leaking whether the serial exists (optional but good)
     if (!device) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
-
-    // Optional: block offline/maintenance auth if you want
-    // if (device.status === "maintenance") return Response.json({ error: "Unauthorized" }, { status: 401 });
 
     const ok = await bcrypt.compare(secret, device.secret_hash);
     if (!ok) {
@@ -87,7 +94,6 @@ export async function POST(req: NextRequest) {
       return Response.json({ error: "Server misconfigured" }, { status: 500 });
     }
 
-    // 15 minutes device token (adjust later)
     const token = await new SignJWT({
       device_id: device.device_id,
       site_id: device.site_id,
@@ -98,10 +104,24 @@ export async function POST(req: NextRequest) {
       .setExpirationTime("15m")
       .sign(new TextEncoder().encode(secretKey));
 
-    // Update last_seen/status (optional but useful)
+    const previousStatus = device.status;
+
     await prisma.device.update({
       where: { device_id: device.device_id },
       data: { last_seen_at: new Date(), status: "online" },
+    });
+
+    await safeAuditLog({
+      action_type: AuditActionType.other,
+      target_type: AuditTargetType.device,
+      target_id: device.device_id,
+      details: {
+        kind: "device_authenticated",
+        site_id: device.site_id,
+        serial_number,
+        previous_status: previousStatus,
+        new_status: "online",
+      },
     });
 
     return Response.json(

@@ -1,6 +1,8 @@
 import bcrypt from "bcrypt";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { AuditActionType, AuditTargetType } from "@prisma/client";
+import { safeAuditLog } from "@/lib/audit";
 
 export const runtime = "nodejs";
 
@@ -14,6 +16,7 @@ function isPrismaKnownError(
     typeof (error as { code?: unknown }).code === "string"
   );
 }
+
 const SignupSchema = z.object({
   full_name: z.string().min(2, "Full name is required"),
   username: z
@@ -83,15 +86,25 @@ export async function POST(req: Request) {
       },
     });
 
+    await safeAuditLog({
+      user_id: user.user_id,
+      action_type: AuditActionType.other,
+      target_type: AuditTargetType.user,
+      target_id: user.user_id,
+      details: {
+        kind: "register",
+        username: user.username,
+        email: user.email,
+      },
+    });
+
     return Response.json({ user }, { status: 201 });
   } catch (err) {
     if (isPrismaKnownError(err) && err.code === "P2002") {
-      if (err.code === "P2002") {
-        return Response.json(
-          { error: "Username or email is already in use." },
-          { status: 409 }
-        );
-      }
+      return Response.json(
+        { error: "Username or email is already in use." },
+        { status: 409 }
+      );
     }
 
     console.error("Signup error:", err);

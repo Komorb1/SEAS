@@ -1,8 +1,10 @@
 import { z } from "zod";
 import type { NextRequest } from "next/server";
+import { AuditActionType, AuditTargetType } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { requireUserId } from "@/lib/auth-request";
+import { safeAuditLog } from "@/lib/audit";
 
 export const runtime = "nodejs";
 
@@ -34,14 +36,17 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
 
     const device = await prisma.device.findUnique({
       where: { device_id: deviceId },
-      select: { site_id: true },
+      select: {
+        device_id: true,
+        site_id: true,
+        status: true,
+      },
     });
 
     if (!device) {
       return Response.json({ error: "Not found" }, { status: 404 });
     }
 
-    // RBAC: owner/admin only (based on SiteUser for the device's site)
     const membership = await prisma.siteUser.findUnique({
       where: { site_id_user_id: { site_id: device.site_id, user_id: userId } },
       select: { role: true },
@@ -51,11 +56,31 @@ export async function PATCH(req: NextRequest, ctx: RouteContext) {
       return Response.json({ error: "Forbidden" }, { status: 403 });
     }
 
+    const nextStatus = parsed.data.status;
+
     const updated = await prisma.device.update({
       where: { device_id: deviceId },
-      data: { status: parsed.data.status },
-      select: { device_id: true, status: true },
+      data: { status: nextStatus },
+      select: {
+        device_id: true,
+        status: true,
+      },
     });
+
+    if (device.status !== updated.status) {
+      await safeAuditLog({
+        user_id: userId,
+        action_type: AuditActionType.other,
+        target_type: AuditTargetType.device,
+        target_id: updated.device_id,
+        details: {
+          kind: "device_status_changed",
+          site_id: device.site_id,
+          old_status: device.status,
+          new_status: updated.status,
+        },
+      });
+    }
 
     return Response.json({ device: updated }, { status: 200 });
   } catch (err: unknown) {
