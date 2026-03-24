@@ -11,7 +11,7 @@ import {
   Siren,
   TriangleAlert,
 } from "lucide-react";
-
+import { AlertStatusActions } from "@/components/alerts/alert-status-actions";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentUserId } from "@/lib/auth";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -353,8 +353,21 @@ export default async function AlertDetailPage({
             )}
           </div>
         </div>
-
         <div className="space-y-6">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+              Actions
+            </h2>
+
+            <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+              Update the lifecycle state of this alert.
+            </p>
+
+            <div className="mt-4">
+              <AlertStatusActions alertId={alert.event_id} status={alert.status} />
+            </div>
+          </div>
+
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
               Context
