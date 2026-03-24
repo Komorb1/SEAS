@@ -98,7 +98,7 @@ function formatDetails(details: unknown, actionType: string): string {
   }
 
   if (actionType === "logout") {
-    return "Signed out of the application";
+    return "Signed Out";
   }
 
   if (actionType === "update_settings" && data.kind === "password_changed") {
