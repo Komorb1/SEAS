@@ -160,6 +160,7 @@ export default async function DevicesPage() {
                     <th className="px-5 py-3 font-medium">Status</th>
                     <th className="px-5 py-3 font-medium">Sensors</th>
                     <th className="px-5 py-3 font-medium">Last Seen</th>
+                    <th className="px-5 py-3 font-medium text-right">Actions</th>
                   </tr>
                 </thead>
 
@@ -189,6 +190,15 @@ export default async function DevicesPage() {
                       </td>
                       <td className="px-5 py-4 text-slate-500 dark:text-slate-400">
                         {formatLastSeen(device.last_seen_at)}
+                      </td>
+                      <td className="px-5 py-4 text-right">
+                        <Link
+                          href={`/devices/${device.device_id}`}
+                          className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-sm font-medium text-slate-700 transition hover:bg-slate-100 hover:text-slate-900 dark:text-slate-300 dark:hover:bg-slate-800 dark:hover:text-white"
+                        >
+                          View
+                          <ChevronRight className="h-4 w-4" />
+                        </Link>
                       </td>
                     </tr>
                   ))}
