@@ -3,7 +3,7 @@ import {
   Clock3,
   Cpu,
   Radio,
-  Search,
+  Search
 } from "lucide-react";
 
 import { prisma } from "@/lib/prisma";
