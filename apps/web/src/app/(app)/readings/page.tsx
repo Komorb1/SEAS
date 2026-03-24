@@ -3,10 +3,19 @@ import {
   Clock3,
   Cpu,
   Radio,
+  Search,
 } from "lucide-react";
 
 import { prisma } from "@/lib/prisma";
 import { requireCurrentUserId } from "@/lib/auth";
+
+type ReadingsPageProps = {
+  searchParams?: Promise<{
+    siteId?: string;
+    deviceId?: string;
+    sensorType?: string;
+  }>;
+};
 
 function formatEnumLabel(value: string): string {
   return value
@@ -30,13 +39,96 @@ function formatReadingValue(value: unknown): string {
   return String(value);
 }
 
-export default async function ReadingsPage() {
+export default async function ReadingsPage({
+  searchParams,
+}: ReadingsPageProps) {
   const userId = await requireCurrentUserId();
+  const params = (await searchParams) ?? {};
+
+  const selectedSiteId = params.siteId?.trim() || "";
+  const selectedDeviceId = params.deviceId?.trim() || "";
+  const selectedSensorType = params.sensorType?.trim() || "";
+
+  const authorizedSites = await prisma.site.findMany({
+    where: {
+      site_users: {
+        some: {
+          user_id: userId,
+        },
+      },
+    },
+    select: {
+      site_id: true,
+      name: true,
+    },
+    orderBy: {
+      name: "asc",
+    },
+  });
+
+  const authorizedSiteIds = authorizedSites.map((site) => site.site_id);
+
+  const devices = await prisma.device.findMany({
+    where: {
+      site_id: {
+        in: authorizedSiteIds,
+      },
+      ...(selectedSiteId ? { site_id: selectedSiteId } : {}),
+    },
+    select: {
+      device_id: true,
+      serial_number: true,
+      site_id: true,
+      site: {
+        select: {
+          name: true,
+        },
+      },
+    },
+    orderBy: [
+      {
+        site: {
+          name: "asc",
+        },
+      },
+      {
+        serial_number: "asc",
+      },
+    ],
+  });
+
+  const sensorTypeOptions = [
+    "gas",
+    "smoke",
+    "flame",
+    "motion",
+    "door",
+  ] as const;
 
   const readings = await prisma.sensorReading.findMany({
     where: {
       sensor: {
+        ...(selectedSensorType
+          ? {
+              sensor_type: selectedSensorType as
+                | "gas"
+                | "smoke"
+                | "flame"
+                | "motion"
+                | "door",
+            }
+          : {}),
+        ...(selectedDeviceId
+          ? {
+              device_id: selectedDeviceId,
+            }
+          : {}),
         device: {
+          ...(selectedSiteId
+            ? {
+                site_id: selectedSiteId,
+              }
+            : {}),
           site: {
             site_users: {
               some: {
@@ -69,6 +161,7 @@ export default async function ReadingsPage() {
               serial_number: true,
               site: {
                 select: {
+                  site_id: true,
                   name: true,
                 },
               },
@@ -78,6 +171,11 @@ export default async function ReadingsPage() {
       },
     },
   });
+
+  const hasActiveFilters =
+    Boolean(selectedSiteId) ||
+    Boolean(selectedDeviceId) ||
+    Boolean(selectedSensorType);
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6">
@@ -99,6 +197,80 @@ export default async function ReadingsPage() {
         </div>
       </section>
 
+      <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <form
+          method="GET"
+          className="flex flex-col gap-3 xl:flex-row xl:items-center xl:gap-4"
+        >
+          <div className="flex shrink-0 items-center gap-2 xl:min-w-fit">
+            <Search className="h-4 w-4 text-slate-400 dark:text-slate-500" />
+            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
+              Filters
+            </span>
+          </div>
+
+          <div className="grid flex-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            <select
+              id="siteId"
+              name="siteId"
+              defaultValue={selectedSiteId}
+              className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-red-400 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+            >
+              <option value="">All sites</option>
+              {authorizedSites.map((site) => (
+                <option key={site.site_id} value={site.site_id}>
+                  {site.name}
+                </option>
+              ))}
+            </select>
+
+            <select
+              id="deviceId"
+              name="deviceId"
+              defaultValue={selectedDeviceId}
+              className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-red-400 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+            >
+              <option value="">All devices</option>
+              {devices.map((device) => (
+                <option key={device.device_id} value={device.device_id}>
+                  {device.serial_number} ({device.site.name})
+                </option>
+              ))}
+            </select>
+
+            <select
+              id="sensorType"
+              name="sensorType"
+              defaultValue={selectedSensorType}
+              className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-red-400 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+            >
+              <option value="">All sensor types</option>
+              {sensorTypeOptions.map((sensorType) => (
+                <option key={sensorType} value={sensorType}>
+                  {formatEnumLabel(sensorType)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex shrink-0 gap-2">
+            <button
+              type="submit"
+              className="h-9 rounded-lg bg-red-600 px-4 text-sm font-medium text-white transition hover:bg-red-700"
+            >
+              Apply
+            </button>
+
+            <a
+              href="/readings"
+              className="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800"
+            >
+              Reset
+            </a>
+          </div>
+        </form>
+      </section>
+
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-4 dark:border-slate-800 sm:px-5">
           <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
@@ -112,10 +284,12 @@ export default async function ReadingsPage() {
         {readings.length === 0 ? (
           <div className="px-5 py-10 text-center">
             <h4 className="text-lg font-semibold text-slate-900 dark:text-white">
-              No readings yet
+              No readings found
             </h4>
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-              No sensor readings were found for your assigned sites.
+              {hasActiveFilters
+                ? "Try changing or clearing the current filters."
+                : "No sensor readings were found for your assigned sites."}
             </p>
           </div>
         ) : (
