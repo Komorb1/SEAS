@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   Bell,
+  ClipboardList,
   LayoutDashboard,
   MapPinned,
   Router,
@@ -37,6 +38,11 @@ const navItems = [
     href: "/profile",
     icon: User,
   },
+  {
+  label: "Audit Logs",
+  href: "/audit-logs",
+  icon: ClipboardList,
+},
 ];
 
 export function Sidebar() {

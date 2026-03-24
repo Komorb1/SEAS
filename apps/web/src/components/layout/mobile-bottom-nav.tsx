@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
+  ClipboardList,
   LayoutDashboard,
   MapPinned,
   Router,
@@ -36,6 +37,11 @@ const navItems = [
     href: "/profile",
     icon: User,
   },
+  {
+    label: "Audit Logs",
+    href: "/audit-logs",
+    icon: ClipboardList,
+  },
 ];
 
 export function MobileBottomNav() {
@@ -43,7 +49,7 @@ export function MobileBottomNav() {
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur md:hidden dark:border-slate-800 dark:bg-slate-950/95">
-      <div className="grid grid-cols-5">
+      <div className="grid grid-cols-6">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive =
@@ -55,14 +61,21 @@ export function MobileBottomNav() {
               href={item.href}
               aria-current={isActive ? "page" : undefined}
               className={[
-                "flex flex-col items-center justify-center gap-1 px-2 py-3 text-[11px] font-medium transition-colors",
+                "flex min-w-0 flex-col items-center justify-center px-1 py-2 transition-colors",
                 isActive
                   ? "text-red-600 dark:text-red-400"
                   : "text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white",
               ].join(" ")}
             >
-              <Icon className="h-4 w-4" />
-              <span className="truncate">{item.label}</span>
+              <Icon className="h-5 w-5 shrink-0" />
+              <span
+                className={[
+                  "mt-1 max-w-full truncate text-[10px] font-medium leading-none transition-all",
+                  isActive ? "block" : "hidden",
+                ].join(" ")}
+              >
+                {item.label}
+              </span>
             </Link>
           );
         })}

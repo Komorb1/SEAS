@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { verifyAuthToken } from "@/lib/jwt";
 
-const protectedRoutes = ["/dashboard", "/sites", "/devices", "/alerts", "/profile"];
+const protectedRoutes = ["/dashboard", "/sites", "/devices", "/alerts", "/profile", "/audit-logs"];
 const authPages = ["/login"];
 
 function matchesRoute(pathname: string, routes: string[]) {
@@ -52,5 +52,5 @@ export async function proxy(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/sites/:path*", "/devices/:path*", "/alerts/:path*", "/profile/:path*", "/login"],
+  matcher: ["/dashboard/:path*", "/sites/:path*", "/devices/:path*", "/alerts/:path*", "/profile/:path*", "/audit-logs/:path*", "/login"],
 };
