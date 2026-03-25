@@ -4,9 +4,12 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentUserId } from "@/lib/auth";
 import { PageEmptyState } from "@/components/ui/page-states";
+
 type UiDeviceStatus = "online" | "offline" | "warning";
 
-function mapDeviceStatus(status: "online" | "offline" | "maintenance"): UiDeviceStatus {
+function mapDeviceStatus(
+  status: "online" | "offline" | "maintenance"
+): UiDeviceStatus {
   if (status === "maintenance") return "warning";
   return status;
 }
@@ -21,35 +24,66 @@ function formatLastSeen(date: Date | null): string {
   }).format(date);
 }
 
+function DevicesOfflineNotice() {
+  return (
+    <section className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-200">
+      Live device data could not be refreshed. You may be offline or the server
+      may be temporarily unavailable.
+    </section>
+  );
+}
+
+type DeviceListItem = {
+  device_id: string;
+  serial_number: string;
+  device_type: string;
+  status: "online" | "offline" | "maintenance";
+  last_seen_at: Date | null;
+  site: {
+    name: string;
+  };
+  _count: {
+    sensors: number;
+  };
+};
+
 export default async function DevicesPage() {
   const userId = await requireCurrentUserId();
 
-  const devices = await prisma.device.findMany({
-    where: {
-      site: {
-        site_users: {
-          some: {
-            user_id: userId,
+  let devices: DeviceListItem[] = [];
+  let hasLiveDataError = false;
+
+  try {
+    devices = await prisma.device.findMany({
+      where: {
+        site: {
+          site_users: {
+            some: {
+              user_id: userId,
+            },
           },
         },
       },
-    },
-    include: {
-      site: {
-        select: {
-          name: true,
+      include: {
+        site: {
+          select: {
+            name: true,
+          },
+        },
+        _count: {
+          select: {
+            sensors: true,
+          },
         },
       },
-      _count: {
-        select: {
-          sensors: true,
-        },
+      orderBy: {
+        created_at: "desc",
       },
-    },
-    orderBy: {
-      created_at: "desc",
-    },
-  });
+    });
+  } catch (error) {
+    hasLiveDataError = true;
+    console.error("Devices data load failed:", error);
+  }
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6">
@@ -66,10 +100,12 @@ export default async function DevicesPage() {
         <div className="inline-flex w-fit items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
           Total devices:
           <span className="ml-2 font-semibold text-slate-900 dark:text-white">
-            {devices.length}
+            {hasLiveDataError ? "—" : devices.length}
           </span>
         </div>
       </section>
+
+      {hasLiveDataError ? <DevicesOfflineNotice /> : null}
 
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-4 dark:border-slate-800 sm:px-5">
@@ -83,8 +119,14 @@ export default async function DevicesPage() {
 
         {devices.length === 0 ? (
           <PageEmptyState
-            title="No devices found"
-            description="No devices were found for your assigned sites."
+            title={
+              hasLiveDataError ? "Devices unavailable offline" : "No devices found"
+            }
+            description={
+              hasLiveDataError
+                ? "Live device data could not be loaded right now."
+                : "No devices were found for your assigned sites."
+            }
             className="py-12"
           />
         ) : (

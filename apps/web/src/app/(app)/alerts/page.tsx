@@ -1,9 +1,16 @@
 import Link from "next/link";
-import { BellRing, Clock3, MapPinned, TriangleAlert, Router } from "lucide-react";
+import {
+  BellRing,
+  Clock3,
+  MapPinned,
+  TriangleAlert,
+  Router,
+} from "lucide-react";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentUserId } from "@/lib/auth";
 import { PageEmptyState } from "@/components/ui/page-states";
+import type { EventType, Severity } from "@prisma/client";
 type UiAlertSeverity = "online" | "warning" | "critical";
 
 function mapSeverityToUiStatus(
@@ -29,37 +36,71 @@ function formatDateTime(date: Date): string {
   }).format(date);
 }
 
+function AlertsOfflineNotice() {
+  return (
+    <section className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-200">
+      Live alert data could not be refreshed. You may be offline or the server
+      may be temporarily unavailable.
+    </section>
+  );
+}
+
+type AlertListItem = {
+  event_id: string;
+  title: string | null;
+  event_type: EventType;
+  severity: Severity;
+  description: string | null;
+  started_at: Date;
+  site: {
+    name: string;
+  };
+  device: {
+    serial_number: string;
+  } | null;
+};
+
 export default async function AlertsPage() {
   const userId = await requireCurrentUserId();
 
-  const alerts = await prisma.emergencyEvent.findMany({
-    where: {
-      site: {
-        site_users: {
-          some: {
-            user_id: userId,
+  let alerts: AlertListItem[] = [];
+  let hasLiveDataError = false;
+
+  try {
+    alerts = await prisma.emergencyEvent.findMany({
+      where: {
+        site: {
+          site_users: {
+            some: {
+              user_id: userId,
+            },
           },
         },
       },
-    },
-    include: {
-      site: {
-        select: {
-          name: true,
+      include: {
+        site: {
+          select: {
+            name: true,
+          },
+        },
+        device: {
+          select: {
+            serial_number: true,
+          },
         },
       },
-      device: {
-        select: {
-          serial_number: true,
-        },
+      orderBy: {
+        started_at: "desc",
       },
-    },
-    orderBy: {
-      started_at: "desc",
-    },
-  });
+    });
+  } catch (error) {
+    hasLiveDataError = true;
+    console.error("Alerts data load failed:", error);
+  }
 
-  const criticalCount = alerts.filter((alert) => alert.severity === "critical").length;
+  const criticalCount = alerts.filter(
+    (alert) => alert.severity === "critical"
+  ).length;
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6">
@@ -77,22 +118,30 @@ export default async function AlertsPage() {
           <div className="inline-flex w-fit items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
             Total alerts:
             <span className="ml-2 font-semibold text-slate-900 dark:text-white">
-              {alerts.length}
+              {hasLiveDataError ? "—" : alerts.length}
             </span>
           </div>
 
           <div className="inline-flex w-fit items-center rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-700 dark:text-red-400">
             Critical:
-            <span className="ml-2 font-semibold">{criticalCount}</span>
+            <span className="ml-2 font-semibold">
+              {hasLiveDataError ? "—" : criticalCount}
+            </span>
           </div>
         </div>
       </section>
 
+      {hasLiveDataError ? <AlertsOfflineNotice /> : null}
+
       {alerts.length === 0 ? (
         <section className="rounded-2xl border border-dashed border-slate-300 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
           <PageEmptyState
-            title="No alerts yet"
-            description="No emergency events were found for your assigned sites."
+            title={hasLiveDataError ? "Alerts unavailable offline" : "No alerts yet"}
+            description={
+              hasLiveDataError
+                ? "Live alert data could not be loaded right now."
+                : "No emergency events were found for your assigned sites."
+            }
             className="py-12"
           />
         </section>

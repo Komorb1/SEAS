@@ -3,6 +3,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentUserId } from "@/lib/auth";
 import { PageEmptyState } from "@/components/ui/page-states";
+
 function formatLocation(site: {
   address_line: string | null;
   city: string | null;
@@ -16,29 +17,57 @@ function formatSiteStatus(status: "active" | "inactive") {
   return status === "active" ? "Monitoring active" : "Monitoring inactive";
 }
 
+function SitesOfflineNotice() {
+  return (
+    <section className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-200">
+      Live site data could not be refreshed. You may be offline or the server
+      may be temporarily unavailable.
+    </section>
+  );
+}
+
+type SiteListItem = {
+  site_id: string;
+  name: string;
+  address_line: string | null;
+  city: string | null;
+  country: string | null;
+  status: "active" | "inactive";
+  _count: {
+    devices: number;
+  };
+};
+
 export default async function SitesPage() {
-  
   const userId = await requireCurrentUserId();
 
-  const sites = await prisma.site.findMany({
-    where: {
-      site_users: {
-        some: {
-          user_id: userId,
+  let sites: SiteListItem[] = [];
+  let hasLiveDataError = false;
+
+  try {
+    sites = await prisma.site.findMany({
+      where: {
+        site_users: {
+          some: {
+            user_id: userId,
+          },
         },
       },
-    },
-    include: {
-      _count: {
-        select: {
-          devices: true,
+      include: {
+        _count: {
+          select: {
+            devices: true,
+          },
         },
       },
-    },
-    orderBy: {
-      created_at: "desc",
-    },
-  });
+      orderBy: {
+        created_at: "desc",
+      },
+    });
+  } catch (error) {
+    hasLiveDataError = true;
+    console.error("Sites data load failed:", error);
+  }
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6">
@@ -53,18 +82,24 @@ export default async function SitesPage() {
         </div>
 
         <div className="inline-flex w-fit items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
-          Total sites:{" "}
+          Total sites:
           <span className="ml-2 font-semibold text-slate-900 dark:text-white">
-            {sites.length}
+            {hasLiveDataError ? "—" : sites.length}
           </span>
         </div>
       </section>
 
+      {hasLiveDataError ? <SitesOfflineNotice /> : null}
+
       {sites.length === 0 ? (
         <section className="rounded-2xl border border-dashed border-slate-300 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
           <PageEmptyState
-            title="No sites yet"
-            description="You do not have any connected sites assigned yet."
+            title={hasLiveDataError ? "Sites unavailable offline" : "No sites yet"}
+            description={
+              hasLiveDataError
+                ? "Live site data could not be loaded right now."
+                : "You do not have any connected sites assigned yet."
+            }
             className="py-12"
           />
         </section>

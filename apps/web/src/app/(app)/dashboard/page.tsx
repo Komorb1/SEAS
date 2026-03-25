@@ -10,20 +10,10 @@ import {
   Activity,
 } from "lucide-react";
 import { StatCard } from "@/components/ui/stat-card";
-import { StatusBadge } from "@/components/ui/status-badge";
 import InstallPWAButton from "@/components/install-pwa-button";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentUserId } from "@/lib/auth";
 import { PageEmptyState } from "@/components/ui/page-states";
-type UiEventStatus = "critical" | "warning" | "online";
-
-function mapSeverityToUiStatus(
-  severity: "low" | "medium" | "high" | "critical"
-): UiEventStatus {
-  if (severity === "critical") return "critical";
-  if (severity === "medium" || severity === "high") return "warning";
-  return "online";
-}
 
 function formatDateTime(date: Date): string {
   return new Intl.DateTimeFormat("en-GB", {
@@ -66,155 +56,203 @@ function getSystemHealth(
   return "Critical";
 }
 
+function DashboardOfflineNotice() {
+  return (
+    <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-200">
+      Live dashboard data could not be refreshed. You may be offline or the
+      server may be temporarily unavailable.
+    </div>
+  );
+}
+
 export default async function DashboardPage() {
   const userId = await requireCurrentUserId();
 
-  const [
-    totalSites,
-    totalDevices,
-    offlineDevices,
-    maintenanceDevices,
-    activeAlerts,
-    recentAlerts,
-    recentAuditLogs,
-  ] = await Promise.all([
-    prisma.site.count({
-      where: {
-        site_users: {
-          some: {
-            user_id: userId,
-          },
-        },
-      },
-    }),
+  let totalSites = 0;
+  let totalDevices = 0;
+  let offlineDevices = 0;
+  let maintenanceDevices = 0;
+  let activeAlerts = 0;
+  let recentAlerts: Array<{
+    event_id: string;
+    title: string | null;
+    event_type: string;
+    severity: "low" | "medium" | "high" | "critical";
+    started_at: Date;
+    site: { name: string };
+    device: { serial_number: string } | null;
+  }> = [];
+  let recentAuditLogs: Array<{
+    log_id: string;
+    action_type: string;
+    target_type: string;
+    created_at: Date | null;
+    user: {
+      full_name: string | null;
+      username: string | null;
+      email: string;
+    } | null;
+    event: {
+      event_id: string;
+      title: string | null;
+      event_type: string;
+      site: { name: string } | null;
+    } | null;
+  }> = [];
 
-    prisma.device.count({
-      where: {
-        site: {
+  let hasLiveDataError = false;
+
+  try {
+    [
+      totalSites,
+      totalDevices,
+      offlineDevices,
+      maintenanceDevices,
+      activeAlerts,
+      recentAlerts,
+      recentAuditLogs,
+    ] = await Promise.all([
+      prisma.site.count({
+        where: {
           site_users: {
             some: {
               user_id: userId,
             },
           },
         },
-      },
-    }),
+      }),
 
-    prisma.device.count({
-      where: {
-        status: "offline",
-        site: {
-          site_users: {
-            some: {
-              user_id: userId,
+      prisma.device.count({
+        where: {
+          site: {
+            site_users: {
+              some: {
+                user_id: userId,
+              },
             },
           },
         },
-      },
-    }),
+      }),
 
-    prisma.device.count({
-      where: {
-        status: "maintenance",
-        site: {
-          site_users: {
-            some: {
-              user_id: userId,
+      prisma.device.count({
+        where: {
+          status: "offline",
+          site: {
+            site_users: {
+              some: {
+                user_id: userId,
+              },
             },
           },
         },
-      },
-    }),
+      }),
 
-    prisma.emergencyEvent.count({
-      where: {
-        status: {
-          in: ["new", "acknowledged"],
-        },
-        site: {
-          site_users: {
-            some: {
-              user_id: userId,
+      prisma.device.count({
+        where: {
+          status: "maintenance",
+          site: {
+            site_users: {
+              some: {
+                user_id: userId,
+              },
             },
           },
         },
-      },
-    }),
+      }),
 
-    prisma.emergencyEvent.findMany({
-      where: {
-        site: {
-          site_users: {
-            some: {
-              user_id: userId,
+      prisma.emergencyEvent.count({
+        where: {
+          status: {
+            in: ["new", "acknowledged"],
+          },
+          site: {
+            site_users: {
+              some: {
+                user_id: userId,
+              },
             },
           },
         },
-      },
-      include: {
-        site: {
-          select: {
-            name: true,
-          },
-        },
-        device: {
-          select: {
-            serial_number: true,
-          },
-        },
-      },
-      orderBy: {
-        started_at: "desc",
-      },
-      take: 4,
-    }),
+      }),
 
-    prisma.auditLog.findMany({
-      where: {
-        OR: [
-          {
-            user_id: userId,
+      prisma.emergencyEvent.findMany({
+        where: {
+          site: {
+            site_users: {
+              some: {
+                user_id: userId,
+              },
+            },
           },
-          {
-            event: {
-              site: {
-                site_users: {
-                  some: {
-                    user_id: userId,
+        },
+        include: {
+          site: {
+            select: {
+              name: true,
+            },
+          },
+          device: {
+            select: {
+              serial_number: true,
+            },
+          },
+        },
+        orderBy: {
+          started_at: "desc",
+        },
+        take: 4,
+      }),
+
+      prisma.auditLog.findMany({
+        where: {
+          OR: [
+            {
+              user_id: userId,
+            },
+            {
+              event: {
+                site: {
+                  site_users: {
+                    some: {
+                      user_id: userId,
+                    },
                   },
                 },
               },
             },
-          },
-        ],
-      },
-      include: {
-        user: {
-          select: {
-            full_name: true,
-            username: true,
-            email: true,
-          },
+          ],
         },
-        event: {
-          select: {
-            event_id: true,
-            title: true,
-            event_type: true,
-            site: {
-              select: {
-                name: true,
+        include: {
+          user: {
+            select: {
+              full_name: true,
+              username: true,
+              email: true,
+            },
+          },
+          event: {
+            select: {
+              event_id: true,
+              title: true,
+              event_type: true,
+              site: {
+                select: {
+                  name: true,
+                },
               },
             },
           },
         },
-      },
-      orderBy: {
-        created_at: "desc",
-      },
-      take: 3,
-    }),
-  ]);
+        orderBy: {
+          created_at: "desc",
+        },
+        take: 3,
+      }),
+    ]);
+  } catch (error) {
+    hasLiveDataError = true;
+    console.error("Dashboard data load failed:", error);
+  }
 
   const systemHealth = getSystemHealth(
     totalDevices,
@@ -238,6 +276,8 @@ export default async function DashboardPage() {
           <InstallPWAButton />
         </div>
       </section>
+
+      {hasLiveDataError ? <DashboardOfflineNotice /> : null}
 
       <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
@@ -288,132 +328,16 @@ export default async function DashboardPage() {
 
           {recentAlerts.length === 0 ? (
             <PageEmptyState
-              title="No recent alerts"
-              description="No recent alerts were found for your assigned sites."
+              title={hasLiveDataError ? "Alerts unavailable offline" : "No recent alerts"}
+              description={
+                hasLiveDataError
+                  ? "Live alert data could not be loaded right now."
+                  : "No recent alerts were found for your assigned sites."
+              }
               icon={<BellRing className="h-5 w-5" />}
               className="py-8 xl:flex-1"
             />
-          ) : (
-            <>
-              <div className="md:hidden">
-                <div className="space-y-3 p-4">
-                  {recentAlerts.map((alert) => (
-                    <Link
-                      key={alert.event_id}
-                      href={`/alerts/${alert.event_id}`}
-                      className="block"
-                    >
-                      <article className="rounded-2xl border border-slate-200 bg-slate-50 p-4 transition hover:shadow-sm dark:border-slate-800 dark:bg-slate-950/40">
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex items-start gap-3">
-                              <div
-                                className={[
-                                  "rounded-xl p-2",
-                                  mapSeverityToUiStatus(alert.severity) === "critical"
-                                    ? "bg-red-500/10 text-red-600 dark:text-red-400"
-                                    : mapSeverityToUiStatus(alert.severity) === "warning"
-                                      ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                                      : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
-                                ].join(" ")}
-                              >
-                                {mapSeverityToUiStatus(alert.severity) === "critical" ? (
-                                  <TriangleAlert className="h-4 w-4" />
-                                ) : (
-                                  <BellRing className="h-4 w-4" />
-                                )}
-                              </div>
-
-                              <div className="min-w-0">
-                                <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                                  {alert.title?.trim() ||
-                                    formatEventType(String(alert.event_type))}
-                                </p>
-                                <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                                  {alert.site.name}
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-
-                          <StatusBadge status={mapSeverityToUiStatus(alert.severity)} />
-                        </div>
-
-                        <div className="mt-4 space-y-2 text-sm">
-                          <div>
-                            <span className="text-slate-500 dark:text-slate-400">
-                              Device:
-                            </span>{" "}
-                            <span className="text-slate-700 dark:text-slate-300">
-                              {alert.device?.serial_number ?? "N/A"}
-                            </span>
-                          </div>
-
-                          <div>
-                            <span className="text-slate-500 dark:text-slate-400">
-                              Time:
-                            </span>{" "}
-                            <span className="text-slate-700 dark:text-slate-300">
-                              {formatDateTime(alert.started_at)}
-                            </span>
-                          </div>
-                        </div>
-                      </article>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-
-              <div className="hidden xl:block">
-                <table className="min-w-full text-sm">
-                  <thead className="bg-slate-100 text-left text-slate-600 dark:bg-slate-950/40 dark:text-slate-400">
-                    <tr>
-                      <th className="px-5 py-3 font-medium">Alert</th>
-                      <th className="px-5 py-3 font-medium">Site</th>
-                      <th className="px-5 py-3 font-medium">Device</th>
-                      <th className="px-5 py-3 font-medium">Severity</th>
-                      <th className="px-5 py-3 font-medium">Time</th>
-                    </tr>
-                  </thead>
-
-                  <tbody>
-                    {recentAlerts.map((alert) => (
-                      <tr
-                        key={alert.event_id}
-                        className="border-t border-slate-200 transition hover:bg-slate-50 dark:border-slate-800 dark:hover:bg-slate-800/40"
-                      >
-                        <td className="px-5 py-4 font-medium text-slate-900 dark:text-white">
-                          <Link
-                            href={`/alerts/${alert.event_id}`}
-                            className="hover:text-red-600 dark:hover:text-red-400"
-                          >
-                            {alert.title?.trim() ||
-                              formatEventType(String(alert.event_type))}
-                          </Link>
-                        </td>
-
-                        <td className="px-5 py-4 text-slate-700 dark:text-slate-300">
-                          {alert.site.name}
-                        </td>
-
-                        <td className="px-5 py-4 text-slate-700 dark:text-slate-300">
-                          {alert.device?.serial_number ?? "N/A"}
-                        </td>
-
-                        <td className="px-5 py-4">
-                          <StatusBadge status={mapSeverityToUiStatus(alert.severity)} />
-                        </td>
-
-                        <td className="px-5 py-4 text-slate-500 dark:text-slate-400">
-                          {formatDateTime(alert.started_at)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </>
-          )}
+          ) : (<></>)}
         </section>
 
         <section className="flex flex-col rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
@@ -439,8 +363,12 @@ export default async function DashboardPage() {
 
           {recentAuditLogs.length === 0 ? (
             <PageEmptyState
-              title="No recent activity"
-              description="No recent activity was found."
+              title={hasLiveDataError ? "Activity unavailable offline" : "No recent activity"}
+              description={
+                hasLiveDataError
+                  ? "Live activity data could not be loaded right now."
+                  : "No recent activity was found."
+              }
               icon={<Activity className="h-5 w-5" />}
               className="py-8 xl:flex-1"
             />
