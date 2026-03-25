@@ -27,6 +27,9 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/grad_project_test?schema=public
       JWT_SECRET: test_secret_ci
       NODE_ENV: test
+      WEB_PUSH_VAPID_PUBLIC_KEY: test_public_key
+      WEB_PUSH_VAPID_PRIVATE_KEY: test_private_key
+      WEB_PUSH_VAPID_SUBJECT: mailto:test@example.com
 
     steps:
       - name: Checkout repository
