@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentUserId } from "@/lib/auth";
-
+import { PageEmptyState } from "@/components/ui/page-states";
 export const dynamic = "force-dynamic";
 
 function formatTimestamp(date: Date): string {
@@ -183,17 +183,13 @@ export default async function AuditLogsPage() {
       ) : null}
 
       {logs.length === 0 ? (
-        <div className="rounded-2xl border border-dashed border-slate-300 bg-white p-10 text-center shadow-sm dark:border-slate-700 dark:bg-slate-900">
-          <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300">
-            🧾
-          </div>
-          <h2 className="mt-4 text-lg font-semibold text-slate-900 dark:text-white">
-            No audit logs yet
-          </h2>
-          <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-            Your recent account activity will appear here once actions are recorded.
-          </p>
-        </div>
+        <section className="rounded-2xl border border-dashed border-slate-300 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+          <PageEmptyState
+            title="No audit logs yet"
+            description="Your recent account activity will appear here once actions are recorded."
+            className="py-12"
+          />
+        </section>
       ) : (
         <>
           <div className="space-y-4 md:hidden">

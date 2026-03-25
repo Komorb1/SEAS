@@ -2,7 +2,7 @@ import { MapPinned, Router, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentUserId } from "@/lib/auth";
-
+import { PageEmptyState } from "@/components/ui/page-states";
 function formatLocation(site: {
   address_line: string | null;
   city: string | null;
@@ -61,13 +61,12 @@ export default async function SitesPage() {
       </section>
 
       {sites.length === 0 ? (
-        <section className="rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center shadow-sm dark:border-slate-700 dark:bg-slate-900">
-          <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-            No sites yet
-          </h3>
-          <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
-            You do not have any connected sites assigned yet.
-          </p>
+        <section className="rounded-2xl border border-dashed border-slate-300 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+          <PageEmptyState
+            title="No sites yet"
+            description="You do not have any connected sites assigned yet."
+            className="py-12"
+          />
         </section>
       ) : (
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">

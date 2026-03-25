@@ -5,7 +5,7 @@ import {
   Radio,
   Search
 } from "lucide-react";
-
+import { PageEmptyState } from "@/components/ui/page-states";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentUserId } from "@/lib/auth";
 
@@ -282,16 +282,15 @@ export default async function ReadingsPage({
         </div>
 
         {readings.length === 0 ? (
-          <div className="px-5 py-10 text-center">
-            <h4 className="text-lg font-semibold text-slate-900 dark:text-white">
-              No readings found
-            </h4>
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-              {hasActiveFilters
+          <PageEmptyState
+            title="No readings found"
+            description={
+              hasActiveFilters
                 ? "Try changing or clearing the current filters."
-                : "No sensor readings were found for your assigned sites."}
-            </p>
-          </div>
+                : "No sensor readings were found for your assigned sites."
+            }
+            className="py-12"
+          />
         ) : (
           <>
             <div className="md:hidden">

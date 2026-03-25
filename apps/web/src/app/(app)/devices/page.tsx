@@ -3,7 +3,7 @@ import Link from "next/link";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentUserId } from "@/lib/auth";
-
+import { PageEmptyState } from "@/components/ui/page-states";
 type UiDeviceStatus = "online" | "offline" | "warning";
 
 function mapDeviceStatus(status: "online" | "offline" | "maintenance"): UiDeviceStatus {
@@ -82,9 +82,11 @@ export default async function DevicesPage() {
         </div>
 
         {devices.length === 0 ? (
-          <div className="px-5 py-6 text-sm text-slate-500 dark:text-slate-400">
-            No devices found for your assigned sites.
-          </div>
+          <PageEmptyState
+            title="No devices found"
+            description="No devices were found for your assigned sites."
+            className="py-12"
+          />
         ) : (
           <>
             <div className="md:hidden">
