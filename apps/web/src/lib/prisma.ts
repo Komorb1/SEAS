@@ -12,6 +12,8 @@ if (!connectionString) {
   throw new Error("DATABASE_URL is not set");
 }
 
+const isTest = process.env.NODE_ENV === "test";
+
 // Reuse Pool + PrismaClient across hot reloads in dev
 const pool =
   globalForPrisma.pgPool ??
@@ -27,10 +29,10 @@ export const prisma =
   globalForPrisma.prisma ??
   new PrismaClient({
     adapter,
-    log: ["error", "warn"],
+    log: isTest ? [] : ["error", "warn"],
   });
 
-if (process.env.NODE_ENV !== "production") {
+if (!isTest && process.env.NODE_ENV !== "production") {
   globalForPrisma.pgPool = pool;
   globalForPrisma.prisma = prisma;
 }

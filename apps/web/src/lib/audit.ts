@@ -29,6 +29,8 @@ export async function safeAuditLog(input: AuditLogInput) {
   try {
     await createAuditLog(input);
   } catch (error) {
-    console.error("Failed to write audit log", error);
+    if (process.env.NODE_ENV !== "test") {
+      console.error("Failed to write audit log", error);
+    }
   }
 }

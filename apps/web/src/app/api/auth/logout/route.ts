@@ -26,11 +26,14 @@ function getCookieValue(cookieHeader: string | null, name: string) {
   return decodeURIComponent(match.slice(name.length + 1));
 }
 
-export async function POST(req: Request) {
+export async function POST(req?: Request) {
   let userId: string | null = null;
 
   try {
-    const token = getCookieValue(req.headers.get("cookie"), "auth_token");
+    const cookieHeader =
+      req && "headers" in req && req.headers ? req.headers.get("cookie") : null;
+
+    const token = getCookieValue(cookieHeader, "auth_token");
 
     if (token) {
       const verified = await jwtVerify<AuthTokenPayload>(token, JWT_SECRET);
