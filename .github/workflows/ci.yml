@@ -25,6 +25,7 @@ jobs:
 
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/grad_project_test?schema=public
+      DIRECT_URL: postgresql://postgres:postgres@localhost:5432/grad_project_test?schema=public
       JWT_SECRET: test_secret_ci
       NODE_ENV: test
       WEB_PUSH_VAPID_PUBLIC_KEY: test_public_key
