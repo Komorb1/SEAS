@@ -3,6 +3,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentUserId } from "@/lib/auth";
 import { PageEmptyState } from "@/components/ui/page-states";
+import { CreateSiteForm } from "@/components/sites/create-site-form";
 
 function formatLocation(site: {
   address_line: string | null;
@@ -88,7 +89,20 @@ export default async function SitesPage() {
           </span>
         </div>
       </section>
+      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+        <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+          <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+            Site Actions
+          </h2>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            Create and manage monitored locations.
+          </p>
+        </div>
 
+        <div className="px-5 py-5">
+          <CreateSiteForm />
+        </div>
+      </section>
       {hasLiveDataError ? <SitesOfflineNotice /> : null}
 
       {sites.length === 0 ? (

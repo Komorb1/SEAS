@@ -57,7 +57,7 @@ describe("DeviceDetailPage authorization", () => {
       device_type: "esp32",
       status: "online",
       created_at: new Date("2026-03-29T08:00:00.000Z"),
-      installed_at: null,
+      location_label: null,
       last_seen_at: null,
       site: {
         site_id: "site-1",
@@ -66,6 +66,12 @@ describe("DeviceDetailPage authorization", () => {
         city: null,
         country: null,
         status: "active",
+        site_users: [
+          {
+            user_id: "user-1",
+            role: "owner",
+          },
+        ],
       },
       sensors: [],
       emergency_events: [],
@@ -99,6 +105,12 @@ describe("DeviceDetailPage authorization", () => {
             city: true,
             country: true,
             status: true,
+            site_users: {
+              select: {
+                user_id: true,
+                role: true,
+              },
+            },
           },
         },
         sensors: {

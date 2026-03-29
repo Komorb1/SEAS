@@ -10,6 +10,7 @@ type RegisterDeviceResponse = {
     device_id: string;
     serial_number: string;
     status: string;
+    location_label: string | null;
   };
   device_secret: string;
 };
@@ -19,6 +20,7 @@ type ListDevicesResponse = {
     device_id: string;
     serial_number: string;
     status: string;
+    location_label: string | null;
   }>;
 };
 
@@ -91,12 +93,19 @@ describe("Devices management (Task #8 / Task #34)", () => {
     await setSiteRole(OWNER_USER_ID, "owner");
   }
 
-  async function registerTestDevice(customSerial?: string) {
+  async function registerTestDevice(
+    customSerial?: string,
+    customLocationLabel?: string | null
+    ) {
     const serialNumber = customSerial ?? makeSerial();
 
     const req = makeReq(
       "POST",
-      { serial_number: serialNumber, device_type: "esp32" },
+      {
+        serial_number: serialNumber,
+        device_type: "esp32",
+        location_label: customLocationLabel ?? null,
+      },
       cookie
     );
 
@@ -278,23 +287,29 @@ describe("Devices management (Task #8 / Task #34)", () => {
     await cleanupDeviceTestData();
   });
 
-  test("register device under site (owner) returns secret once", async () => {
+  test("register device under site (owner) returns secret once and stores location", async () => {
     await setMockUser(OWNER_USER_ID);
 
-    const { res, body, serialNumber } = await registerTestDevice();
+    const locationLabel = "Main entrance";
+    const { res, body, serialNumber } = await registerTestDevice(
+      undefined,
+      locationLabel
+    );
 
     expect(res.status).toBe(201);
     expect(body.device.serial_number).toBe(serialNumber);
+    expect(body.device.location_label).toBe(locationLabel);
     expect(typeof body.device_secret).toBe("string");
     expect(body.device_secret.length).toBeGreaterThan(20);
 
     const dbDevice = await prisma.device.findUnique({
       where: { device_id: body.device.device_id },
-      select: { secret_hash: true },
+      select: { secret_hash: true, location_label: true },
     });
 
     expect(dbDevice?.secret_hash).toBeTruthy();
     expect(dbDevice?.secret_hash).not.toBe(body.device_secret);
+    expect(dbDevice?.location_label).toBe(locationLabel);
   });
 
   test("admin can register device under site", async () => {
@@ -305,7 +320,11 @@ describe("Devices management (Task #8 / Task #34)", () => {
 
     const req = makeReq(
       "POST",
-      { serial_number: serialNumber, device_type: "esp32" },
+      {
+        serial_number: serialNumber,
+        device_type: "esp32",
+        location_label: "Server room",
+      },
       cookie
     );
 
@@ -317,6 +336,7 @@ describe("Devices management (Task #8 / Task #34)", () => {
 
     const body = await readJson<RegisterDeviceResponse>(res);
     expect(body.device.serial_number).toBe(serialNumber);
+    expect(body.device.location_label).toBe("Server room");
     expect(typeof body.device_secret).toBe("string");
   });
 

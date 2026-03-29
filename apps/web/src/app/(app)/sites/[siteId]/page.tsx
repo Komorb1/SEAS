@@ -3,6 +3,9 @@ import { notFound } from "next/navigation";
 import { requireCurrentUserId } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ArrowLeft } from "lucide-react";
+import { SiteStatusAction } from "@/components/sites/site-status-action";
+import { RegisterDeviceForm } from "@/components/sites/register-device-form";
+import { DeleteSiteAction } from "@/components/sites/delete-site-action";
 
 type SiteDetailsPageProps = {
   params: Promise<{
@@ -73,6 +76,14 @@ export default async function SiteDetailsPage({
     notFound();
   }
 
+  const currentMembership = site.site_users.find(
+    (membership) => membership.user_id === userId
+  );
+  const currentUserRole = currentMembership?.role ?? null;
+  const canManageSite =
+    currentUserRole === "owner" || currentUserRole === "admin";
+  const canDeleteSite = currentUserRole === "owner";
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -126,6 +137,35 @@ export default async function SiteDetailsPage({
         </article>
       </section>
 
+      {canManageSite || canDeleteSite ? (
+        <section className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
+            <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
+              Site Actions
+            </h2>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Manage this site and its connected devices.
+            </p>
+          </div>
+
+          <div className="space-y-6 px-5 py-5">
+            {canManageSite ? (
+              <>
+                <SiteStatusAction
+                  siteId={site.site_id}
+                  currentStatus={site.status}
+                />
+                <RegisterDeviceForm siteId={site.site_id} />
+              </>
+            ) : null}
+
+            {canDeleteSite ? (
+              <DeleteSiteAction siteId={site.site_id} siteName={site.name} />
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="border-b border-slate-200 px-5 py-4 dark:border-slate-800">
           <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
@@ -158,6 +198,9 @@ export default async function SiteDetailsPage({
                   </p>
                   <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
                     Serial: {device.serial_number}
+                  </p>
+                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                    Location: {device.location_label}
                   </p>
                   <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
                     Sensors: {device.sensors.length}

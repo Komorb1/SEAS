@@ -164,7 +164,7 @@ model Device {
   serial_number String       @unique
   device_type   String
   secret_hash   String
-  installed_at  DateTime?    @db.Timestamptz(6)
+  location_label String?
   last_seen_at  DateTime?    @db.Timestamptz(6)
   status        DeviceStatus @default(offline)
   created_at    DateTime     @default(now()) @db.Timestamptz(6)

@@ -17,6 +17,7 @@ type RouteContext = {
 const RegisterDeviceSchema = z.object({
   serial_number: z.string().min(3).max(100),
   device_type: z.string().min(2).max(100),
+  location_label: z.string().min(2).max(100).optional().nullable(),
 });
 
 function isOwnerOrAdmin(role: string): boolean {
@@ -55,6 +56,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
         serial_number: parsed.data.serial_number,
         device_type: parsed.data.device_type,
         secret_hash: secretHash,
+        location_label: parsed.data.location_label ?? null,
         status: "offline",
       },
       select: {
@@ -62,6 +64,7 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
         site_id: true,
         serial_number: true,
         device_type: true,
+        location_label: true,
         status: true,
         created_at: true,
       },
@@ -131,7 +134,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
         serial_number: true,
         device_type: true,
         status: true,
-        installed_at: true,
+        location_label: true,
         last_seen_at: true,
         created_at: true,
       },

@@ -13,6 +13,7 @@ import {
 import { prisma } from "@/lib/prisma";
 import { requireCurrentUserId } from "@/lib/auth";
 import { StatusBadge } from "@/components/ui/status-badge";
+import { DeviceStatusAction } from "@/components/devices/device-status-action";
 
 type DeviceUiStatus = "online" | "offline" | "warning";
 
@@ -73,6 +74,12 @@ export default async function DeviceDetailPage({
           city: true,
           country: true,
           status: true,
+          site_users: {
+            select: {
+              user_id: true,
+              role: true,
+            },
+          },
         },
       },
       sensors: {
@@ -105,6 +112,13 @@ export default async function DeviceDetailPage({
   if (!device) {
     notFound();
   }
+
+  const currentMembership = device.site.site_users.find(
+    (membership) => membership.user_id === userId
+  );
+  const currentUserRole = currentMembership?.role ?? null;
+  const canManageDevice =
+    currentUserRole === "owner" || currentUserRole === "admin";
 
   const recentReadings = await prisma.sensorReading.findMany({
     where: {
@@ -186,11 +200,23 @@ export default async function DeviceDetailPage({
 
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <DetailCard label="Serial number" value={device.serial_number} />
-              <DetailCard label="Status" value={formatEnumLabel(String(device.status))} />
+              <DetailCard
+                label="Status"
+                value={formatEnumLabel(String(device.status))}
+              />
               <DetailCard label="Device type" value={device.device_type} />
-              <DetailCard label="Created at" value={formatDateTime(device.created_at)} />
-              <DetailCard label="Installed at" value={formatDateTime(device.installed_at)} />
-              <DetailCard label="Last seen" value={formatDateTime(device.last_seen_at)} />
+              <DetailCard
+                label="Created at"
+                value={formatDateTime(device.created_at)}
+              />
+              <DetailCard
+                label="Location"
+                value={device.location_label ?? "Not set"}
+              />
+              <DetailCard
+                label="Last seen"
+                value={formatDateTime(device.last_seen_at)}
+              />
             </div>
           </div>
 
@@ -288,6 +314,15 @@ export default async function DeviceDetailPage({
         </div>
 
         <div className="space-y-6">
+          {canManageDevice ? (
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+              <DeviceStatusAction
+                deviceId={device.device_id}
+                currentStatus={device.status}
+              />
+            </div>
+          ) : null}
+
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
               Context
@@ -322,7 +357,10 @@ export default async function DeviceDetailPage({
                       </p>
                     ) : (
                       device.sensors.map((sensor) => (
-                        <div key={sensor.sensor_id} className="text-slate-500 dark:text-slate-500">
+                        <div
+                          key={sensor.sensor_id}
+                          className="text-slate-500 dark:text-slate-500"
+                        >
                           {formatEnumLabel(String(sensor.sensor_type))}
                           {sensor.location_label ? ` • ${sensor.location_label}` : ""}
                           {` • ${formatEnumLabel(String(sensor.status))}`}
@@ -339,7 +377,7 @@ export default async function DeviceDetailPage({
                 <div>
                   <p className="font-medium text-slate-900 dark:text-white">Timestamps</p>
                   <p>Created: {formatDateTime(device.created_at)}</p>
-                  <p>Installed: {formatDateTime(device.installed_at)}</p>
+                  <p>Location: {device.location_label ?? "Not set"}</p>
                   <p>Last seen: {formatDateTime(device.last_seen_at)}</p>
                 </div>
               </div>
