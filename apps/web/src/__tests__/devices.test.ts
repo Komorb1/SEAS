@@ -1,5 +1,4 @@
 import { prisma } from "@/lib/prisma";
-
 import {
   POST as devicesPOST,
   GET as devicesGET,
@@ -43,34 +42,53 @@ function makeSerial(prefix = "SN-TEST") {
   return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 }
 
-describe("Devices management (Task #8)", () => {
-  const MOCK_USER_ID = "00000000-0000-0000-0000-000000000002";
-  const cookie = "auth_token=user:0002";
+describe("Devices management (Task #8 / Task #34)", () => {
+  const OWNER_USER_ID = "00000000-0000-0000-0000-000000000002";
+  const ADMIN_USER_ID = "00000000-0000-0000-0000-000000000003";
+  const VIEWER_USER_ID = "00000000-0000-0000-0000-000000000004";
+
+  const cookie = "auth_token=user:test";
   const TEST_SITE_NAME = "Device Test Site";
-  const TEST_USERNAME = "mock_user_devices";
-  const TEST_EMAIL = "mock_user_devices@example.com";
+
+  const OWNER_USERNAME = "mock_user_devices";
+  const OWNER_EMAIL = "mock_user_devices@example.com";
+  const ADMIN_USERNAME = "mock_admin_devices";
+  const ADMIN_EMAIL = "mock_admin_devices@example.com";
+  const VIEWER_USERNAME = "mock_viewer_devices";
+  const VIEWER_EMAIL = "mock_viewer_devices@example.com";
 
   let siteId = "";
 
-  async function ensureOwnerMembership() {
+  async function setMockUser(userId: string) {
+    process.env.MOCK_USER_ID = userId;
+  }
+
+  async function setSiteRole(
+    userId: string,
+    role: "owner" | "admin" | "viewer"
+  ) {
     if (!siteId) {
-      throw new Error("siteId was not initialized before ensureOwnerMembership()");
+      throw new Error("siteId was not initialized before setSiteRole()");
     }
 
     await prisma.siteUser.upsert({
       where: {
         site_id_user_id: {
           site_id: siteId,
-          user_id: MOCK_USER_ID,
+          user_id: userId,
         },
       },
-      update: { role: "owner" },
+      update: { role },
       create: {
         site_id: siteId,
-        user_id: MOCK_USER_ID,
-        role: "owner",
+        user_id: userId,
+        role,
       },
     });
+  }
+
+  async function ensureOwnerMembership() {
+    await setSiteRole(OWNER_USER_ID, "owner");
   }
 
   async function registerTestDevice(customSerial?: string) {
@@ -164,7 +182,9 @@ describe("Devices management (Task #8)", () => {
             },
           },
           {
-            user_id: MOCK_USER_ID,
+            user_id: {
+              in: [OWNER_USER_ID, ADMIN_USER_ID, VIEWER_USER_ID],
+            },
           },
         ],
       },
@@ -179,9 +199,15 @@ describe("Devices management (Task #8)", () => {
     await prisma.user.deleteMany({
       where: {
         OR: [
-          { user_id: MOCK_USER_ID },
-          { username: TEST_USERNAME },
-          { email: TEST_EMAIL },
+          { user_id: OWNER_USER_ID },
+          { user_id: ADMIN_USER_ID },
+          { user_id: VIEWER_USER_ID },
+          { username: OWNER_USERNAME },
+          { username: ADMIN_USERNAME },
+          { username: VIEWER_USERNAME },
+          { email: OWNER_EMAIL },
+          { email: ADMIN_EMAIL },
+          { email: VIEWER_EMAIL },
         ],
       },
     });
@@ -190,21 +216,36 @@ describe("Devices management (Task #8)", () => {
   beforeAll(async () => {
     await cleanupDeviceTestData();
 
-    await prisma.user.upsert({
-      where: { user_id: MOCK_USER_ID },
-      update: {
-        full_name: "Mock User",
-        username: TEST_USERNAME,
-        email: TEST_EMAIL,
+    await prisma.user.create({
+      data: {
+        user_id: OWNER_USER_ID,
+        full_name: "Mock Owner",
+        username: OWNER_USERNAME,
+        email: OWNER_EMAIL,
         phone: null,
         password_hash: "x",
         status: "active",
       },
-      create: {
-        user_id: MOCK_USER_ID,
-        full_name: "Mock User",
-        username: TEST_USERNAME,
-        email: TEST_EMAIL,
+    });
+
+    await prisma.user.create({
+      data: {
+        user_id: ADMIN_USER_ID,
+        full_name: "Mock Admin",
+        username: ADMIN_USERNAME,
+        email: ADMIN_EMAIL,
+        phone: null,
+        password_hash: "x",
+        status: "active",
+      },
+    });
+
+    await prisma.user.create({
+      data: {
+        user_id: VIEWER_USER_ID,
+        full_name: "Mock Viewer",
+        username: VIEWER_USERNAME,
+        email: VIEWER_EMAIL,
         phone: null,
         password_hash: "x",
         status: "active",
@@ -219,21 +260,27 @@ describe("Devices management (Task #8)", () => {
     siteId = site.site_id;
 
     await ensureOwnerMembership();
+    await setMockUser(OWNER_USER_ID);
   });
 
   beforeEach(async () => {
     await ensureOwnerMembership();
+    await setMockUser(OWNER_USER_ID);
   });
 
   afterEach(async () => {
     await ensureOwnerMembership();
+    await setMockUser(OWNER_USER_ID);
   });
 
   afterAll(async () => {
+    delete process.env.MOCK_USER_ID;
     await cleanupDeviceTestData();
   });
 
   test("register device under site (owner) returns secret once", async () => {
+    await setMockUser(OWNER_USER_ID);
+
     const { res, body, serialNumber } = await registerTestDevice();
 
     expect(res.status).toBe(201);
@@ -250,7 +297,64 @@ describe("Devices management (Task #8)", () => {
     expect(dbDevice?.secret_hash).not.toBe(body.device_secret);
   });
 
+  test("admin can register device under site", async () => {
+    await setSiteRole(ADMIN_USER_ID, "admin");
+    await setMockUser(ADMIN_USER_ID);
+
+    const serialNumber = makeSerial("SN-ADMIN");
+
+    const req = makeReq(
+      "POST",
+      { serial_number: serialNumber, device_type: "esp32" },
+      cookie
+    );
+
+    const res = await devicesPOST(req as never, {
+      params: Promise.resolve({ siteId }),
+    });
+
+    expect(res.status).toBe(201);
+
+    const body = await readJson<RegisterDeviceResponse>(res);
+    expect(body.device.serial_number).toBe(serialNumber);
+    expect(typeof body.device_secret).toBe("string");
+  });
+
+  test("viewer cannot register device under site", async () => {
+    await setSiteRole(VIEWER_USER_ID, "viewer");
+    await setMockUser(VIEWER_USER_ID);
+
+    const req = makeReq(
+      "POST",
+      { serial_number: makeSerial("SN-VIEWER"), device_type: "esp32" },
+      cookie
+    );
+
+    const res = await devicesPOST(req as never, {
+      params: Promise.resolve({ siteId }),
+    });
+
+    expect(res.status).toBe(403);
+  });
+
+  test("unauthenticated user cannot register device under site", async () => {
+    delete process.env.MOCK_USER_ID;
+
+    const req = makeReq("POST", {
+      serial_number: makeSerial("SN-NOAUTH"),
+      device_type: "esp32",
+    });
+
+    const res = await devicesPOST(req as never, {
+      params: Promise.resolve({ siteId }),
+    });
+
+    expect(res.status).toBe(401);
+  });
+
   test("unique serial_number enforced (409)", async () => {
+    await setMockUser(OWNER_USER_ID);
+
     const serialNumber = makeSerial("SN-UNIQUE");
 
     const first = await devicesPOST(
@@ -281,7 +385,12 @@ describe("Devices management (Task #8)", () => {
   });
 
   test("list devices per site (member can list)", async () => {
+    await setSiteRole(VIEWER_USER_ID, "viewer");
+    await setMockUser(OWNER_USER_ID);
+
     const { body: created } = await registerTestDevice();
+
+    await setMockUser(VIEWER_USER_ID);
 
     const req = makeReq("GET", undefined, cookie);
     const res = await devicesGET(req as never, {
@@ -298,6 +407,8 @@ describe("Devices management (Task #8)", () => {
   });
 
   test("update device status (owner/admin only)", async () => {
+    await setMockUser(OWNER_USER_ID);
+
     const { body: created } = await registerTestDevice();
     const deviceId = created.device.device_id;
 
@@ -318,23 +429,13 @@ describe("Devices management (Task #8)", () => {
   });
 
   test("viewer cannot modify device", async () => {
+    await setMockUser(OWNER_USER_ID);
+
     const { body: created } = await registerTestDevice();
     const deviceId = created.device.device_id;
 
-    await prisma.siteUser.upsert({
-      where: {
-        site_id_user_id: {
-          site_id: siteId,
-          user_id: MOCK_USER_ID,
-        },
-      },
-      update: { role: "viewer" },
-      create: {
-        site_id: siteId,
-        user_id: MOCK_USER_ID,
-        role: "viewer",
-      },
-    });
+    await setSiteRole(VIEWER_USER_ID, "viewer");
+    await setMockUser(VIEWER_USER_ID);
 
     const req = makeReq("PATCH", { status: "online" }, cookie);
 
