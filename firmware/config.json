@@ -1,0 +1,13 @@
+{
+  "base_url": "https://seas-web.vercel.app",
+  "device_serial_number": "myDevice",
+  "device_secret": "e2b318fd92fa90d537fc0e7df2fcd7fb4679afe6abd5e4612ef6b06c0eeb4b44",
+  "interval_seconds": 5,
+  "request_timeout_seconds": 15,
+  "sensors": {
+    "gas": {
+      "sensor_id": "e08c6d89-aed5-4594-941f-98ef423c60a6",
+      "unit": "ppm"
+    }
+  }
+}
