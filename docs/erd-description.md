@@ -205,3 +205,5 @@ It supports:
 - Full audit traceability  
 
 This model balances simplicity and extensibility, making it suitable for both academic and production-oriented implementations.
+
+## edit: remember to edit the er-diagram at device entity {installed_at changed into location_label} attribute
