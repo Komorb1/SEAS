@@ -12,7 +12,6 @@ type RegisterDeviceResponse = {
     status: string;
     location_label: string | null;
   };
-  device_secret: string;
 };
 
 type ListDevicesResponse = {
@@ -297,18 +296,17 @@ describe("Devices management (Task #8 / Task #34)", () => {
     );
 
     expect(res.status).toBe(201);
+    expect(body.device).toBeDefined();
     expect(body.device.serial_number).toBe(serialNumber);
     expect(body.device.location_label).toBe(locationLabel);
-    expect(typeof body.device_secret).toBe("string");
-    expect(body.device_secret.length).toBeGreaterThan(20);
+    expect("device_secret" in body).toBe(false);
 
     const dbDevice = await prisma.device.findUnique({
       where: { device_id: body.device.device_id },
       select: { secret_hash: true, location_label: true },
     });
 
-    expect(dbDevice?.secret_hash).toBeTruthy();
-    expect(dbDevice?.secret_hash).not.toBe(body.device_secret);
+    expect(dbDevice?.secret_hash).toBeNull();
     expect(dbDevice?.location_label).toBe(locationLabel);
   });
 
@@ -337,7 +335,7 @@ describe("Devices management (Task #8 / Task #34)", () => {
     const body = await readJson<RegisterDeviceResponse>(res);
     expect(body.device.serial_number).toBe(serialNumber);
     expect(body.device.location_label).toBe("Server room");
-    expect(typeof body.device_secret).toBe("string");
+    expect("device_secret" in body).toBe(false);
   });
 
   test("viewer cannot register device under site", async () => {

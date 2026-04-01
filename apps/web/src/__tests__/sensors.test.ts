@@ -8,6 +8,7 @@ type CreateSensorResponse = {
   sensor: {
     sensor_id: string;
     device_id: string;
+    external_key: string;
     sensor_type: string;
     is_enabled: boolean;
     status: string;
@@ -136,12 +137,15 @@ describe("Sensors management (Task #9)", () => {
     const sensor = await prisma.sensor.create({
       data: {
         device_id: deviceId,
-        sensor_type: "smoke",
+        external_key: `gas-1`,
+        sensor_type: "gas",
         location_label: "Kitchen ceiling",
         is_enabled: true,
         status: "ok",
       },
-      select: { sensor_id: true },
+      select: {
+        sensor_id: true,
+      },
     });
     sensorId = sensor.sensor_id;
   });
@@ -192,24 +196,35 @@ describe("Sensors management (Task #9)", () => {
   test("owner can add sensor to device", async () => {
     process.env.MOCK_USER_ID = OWNER_ID;
 
+    const externalKey = `gas-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
     const req = makeReq("POST", {
       sensor_type: "gas",
       location_label: "Living room",
+      external_key: externalKey,
     });
 
     const res = await sensorsPOST(asNextRequest(req), {
       params: Promise.resolve({ deviceId }),
     });
 
-    expect(res.status).toBe(201);
+    const body = await readJson<{
+      error?: string;
+      details?: unknown;
+      sensor?: CreateSensorResponse["sensor"];
+    }>(res);
 
-    const body = await readJson<CreateSensorResponse>(res);
-    expect(body.sensor.sensor_id).toMatch(
+    expect(res.status).toBe(201);
+    expect(body.sensor).toBeDefined();
+
+    const sensor = body.sensor!;
+    expect(sensor.sensor_id).toMatch(
       /^[0-9a-f-]{8}-[0-9a-f-]{4}-[0-9a-f-]{4}-[0-9a-f-]{4}-[0-9a-f-]{12}$/i,
     );
-    expect(body.sensor.device_id).toBe(deviceId);
-    expect(body.sensor.sensor_type).toBe("gas");
-    expect(body.sensor.is_enabled).toBe(true);
+    expect(sensor.device_id).toBe(deviceId);
+    expect(sensor.sensor_type).toBe("gas");
+    expect(sensor.external_key).toBe(externalKey);
+    expect(sensor.is_enabled).toBe(true);
   });
 
   test("list sensors per device (viewer can read)", async () => {

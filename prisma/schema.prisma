@@ -163,7 +163,7 @@ model Device {
   site_id       String       @db.Uuid
   serial_number String       @unique
   device_type   String
-  secret_hash   String
+  secret_hash   String?
   location_label String?
   last_seen_at  DateTime?    @db.Timestamptz(6)
   status        DeviceStatus @default(offline)
@@ -182,6 +182,7 @@ model Device {
 model Sensor {
   sensor_id      String       @id @default(uuid()) @db.Uuid
   device_id      String       @db.Uuid
+  external_key   String
   sensor_type    SensorType
   location_label String?
   is_enabled     Boolean      @default(true)
@@ -195,6 +196,7 @@ model Sensor {
   @@index([device_id])
   @@index([sensor_type])
   @@index([status])
+  @@unique([device_id, external_key])
   @@map("Sensor")
 }
 

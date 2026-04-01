@@ -126,7 +126,7 @@ describe("DeviceDetailPage authorization", () => {
           orderBy: {
             started_at: "desc",
           },
-          take: 5,
+          take: 3,
           select: {
             event_id: true,
             event_type: true,
@@ -149,7 +149,7 @@ describe("DeviceDetailPage authorization", () => {
       orderBy: {
         received_at: "desc",
       },
-      take: 10,
+      take: 3,
       select: {
         reading_id: true,
         value: true,

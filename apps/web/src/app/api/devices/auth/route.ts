@@ -80,7 +80,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    if (!device) {
+    if (!device || !device.secret_hash) {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
 

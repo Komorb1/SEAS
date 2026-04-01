@@ -13,13 +13,11 @@ export function RegisterDeviceForm({ siteId }: Props) {
   const [deviceType, setDeviceType] = useState("esp32");
   const [locationLabel, setLocationLabel] = useState("");
   const [message, setMessage] = useState<string | null>(null);
-  const [deviceSecret, setDeviceSecret] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
     setMessage(null);
-    setDeviceSecret(null);
 
     const res = await fetch(`/api/sites/${siteId}/devices`, {
       method: "POST",
@@ -41,7 +39,6 @@ export function RegisterDeviceForm({ siteId }: Props) {
     }
 
     setMessage("Device registered successfully.");
-    setDeviceSecret(body?.device_secret ?? null);
     setSerialNumber("");
     setDeviceType("esp32");
     setLocationLabel("");
@@ -110,13 +107,6 @@ export function RegisterDeviceForm({ siteId }: Props) {
         <p className="text-sm text-slate-600 dark:text-slate-400">{message}</p>
       ) : null}
 
-      {deviceSecret ? (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-200">
-          <p className="font-semibold">Device secret</p>
-          <p className="mt-1 break-all">{deviceSecret}</p>
-          <p className="mt-2 text-xs">Copy this now. It is only shown once.</p>
-        </div>
-      ) : null}
     </form>
   );
 }

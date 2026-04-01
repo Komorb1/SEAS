@@ -11,6 +11,7 @@ type SensorSettingsActionProps = {
   initialLocationLabel: string | null;
   initialStatus: SensorStatus;
   initialEnabled: boolean;
+  embedded?: boolean;
 };
 
 export function SensorSettingsAction({
@@ -19,6 +20,7 @@ export function SensorSettingsAction({
   initialLocationLabel,
   initialStatus,
   initialEnabled,
+  embedded = false,
 }: SensorSettingsActionProps) {
   const router = useRouter();
 
@@ -67,13 +69,21 @@ export function SensorSettingsAction({
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
+    <div
+      className={
+        embedded
+          ? "p-0"
+          : "rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950"
+      }
+    >
       <div className="flex flex-col gap-3">
-        <div>
-          <p className="text-sm font-medium text-slate-900 dark:text-white">
-            {sensorTypeLabel}
-          </p>
-        </div>
+        {!embedded ? (
+          <div>
+            <p className="text-sm font-medium text-slate-900 dark:text-white">
+              {sensorTypeLabel}
+            </p>
+          </div>
+        ) : null}
 
         <div className="grid gap-3">
           <label className="space-y-1">

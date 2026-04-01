@@ -78,10 +78,27 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    await prisma.device.update({
+    const currentDevice = await prisma.device.findUnique({
       where: { device_id: device.device_id },
-      data: { last_seen_at: new Date(), status: "online" },
+      select: { status: true },
     });
+
+    if (currentDevice?.status === "maintenance") {
+      await prisma.device.update({
+        where: { device_id: device.device_id },
+        data: {
+          last_seen_at: new Date(),
+        },
+      });
+    } else {
+      await prisma.device.update({
+        where: { device_id: device.device_id },
+        data: {
+          last_seen_at: new Date(),
+          status: "online",
+        },
+      });
+    }
 
     let createdEvent = null;
     let createdNotifications = 0;

@@ -5,6 +5,9 @@ node_modules/
 .env
 .env.*
 
+# local config files
+firmware/config.json
+
 # Next.js
 .next/
 out/

@@ -1,6 +1,4 @@
 import { z } from "zod";
-import bcrypt from "bcrypt";
-import crypto from "crypto";
 import type { NextRequest } from "next/server";
 import { AuditActionType, AuditTargetType } from "@prisma/client";
 
@@ -47,15 +45,12 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       return Response.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const deviceSecret = crypto.randomBytes(32).toString("hex");
-    const secretHash = await bcrypt.hash(deviceSecret, 12);
-
     const device = await prisma.device.create({
       data: {
         site_id: siteId,
         serial_number: parsed.data.serial_number,
         device_type: parsed.data.device_type,
-        secret_hash: secretHash,
+        secret_hash: null,
         location_label: parsed.data.location_label ?? null,
         status: "offline",
       },
@@ -81,13 +76,13 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
         serial_number: device.serial_number,
         device_type: device.device_type,
         status: device.status,
+        provisioned: false,
       },
     });
 
     return Response.json(
       {
         device,
-        device_secret: deviceSecret,
       },
       { status: 201 }
     );

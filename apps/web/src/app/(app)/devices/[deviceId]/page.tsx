@@ -9,17 +9,18 @@ import {
   ShieldAlert,
   Activity,
 } from "lucide-react";
-
+import { DeleteDeviceAction } from "@/components/devices/delete-device-action";
 import { SensorSettingsAction } from "@/components/devices/sensor-settings-action";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentUserId } from "@/lib/auth";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { DeviceStatusAction } from "@/components/devices/device-status-action";
+import { getEffectiveDeviceStatus } from "@/lib/device-status";
 
 type DeviceUiStatus = "online" | "offline" | "warning";
 
 function mapDeviceStatusToBadgeStatus(
-  status: "online" | "offline" | "maintenance"
+  status: "online" | "offline" | "maintenance",
 ): DeviceUiStatus {
   if (status === "online") return "online";
   if (status === "maintenance") return "warning";
@@ -96,7 +97,7 @@ export default async function DeviceDetailPage({
         orderBy: {
           started_at: "desc",
         },
-        take: 5,
+        take: 3,
         select: {
           event_id: true,
           event_type: true,
@@ -115,7 +116,7 @@ export default async function DeviceDetailPage({
   }
 
   const currentMembership = device.site.site_users.find(
-    (membership) => membership.user_id === userId
+    (membership) => membership.user_id === userId,
   );
   const currentUserRole = currentMembership?.role ?? null;
   const canManageDevice =
@@ -130,7 +131,7 @@ export default async function DeviceDetailPage({
     orderBy: {
       received_at: "desc",
     },
-    take: 10,
+    take: 3,
     select: {
       reading_id: true,
       value: true,
@@ -148,8 +149,12 @@ export default async function DeviceDetailPage({
     },
   });
 
-  const uiStatus = mapDeviceStatusToBadgeStatus(device.status);
+const effectiveStatus = getEffectiveDeviceStatus(
+  device.status,
+  device.last_seen_at
+);
 
+const uiStatus = mapDeviceStatusToBadgeStatus(effectiveStatus);
   return (
     <div className="mx-auto w-full max-w-6xl space-y-6">
       <div>
@@ -243,13 +248,15 @@ export default async function DeviceDetailPage({
                           {String(reading.value)} {reading.unit ?? ""}
                         </p>
                         <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
-                          Sensor: {formatEnumLabel(String(reading.sensor.sensor_type))}
+                          Sensor:{" "}
+                          {formatEnumLabel(String(reading.sensor.sensor_type))}
                           {reading.sensor.location_label
                             ? ` • ${reading.sensor.location_label}`
                             : ""}
                         </p>
                         <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
-                          Quality: {formatEnumLabel(String(reading.quality_flag))}
+                          Quality:{" "}
+                          {formatEnumLabel(String(reading.quality_flag))}
                         </p>
                       </div>
 
@@ -292,8 +299,8 @@ export default async function DeviceDetailPage({
                               formatEnumLabel(String(event.event_type))}
                           </p>
                           <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
-                            Severity: {formatEnumLabel(String(event.severity))} • Status:{" "}
-                            {formatEnumLabel(String(event.status))}
+                            Severity: {formatEnumLabel(String(event.severity))}{" "}
+                            • Status: {formatEnumLabel(String(event.status))}
                           </p>
                           {event.description ? (
                             <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
@@ -324,6 +331,10 @@ export default async function DeviceDetailPage({
             </div>
           ) : null}
 
+          {canManageDevice ? (
+            <DeleteDeviceAction deviceId={device.device_id} />
+          ) : null}
+
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <h2 className="text-lg font-semibold text-slate-900 dark:text-white">
               Context
@@ -333,10 +344,16 @@ export default async function DeviceDetailPage({
               <div className="flex items-start gap-3 text-slate-600 dark:text-slate-400">
                 <MapPinned className="mt-0.5 h-4 w-4 shrink-0" />
                 <div>
-                  <p className="font-medium text-slate-900 dark:text-white">Site</p>
+                  <p className="font-medium text-slate-900 dark:text-white">
+                    Site
+                  </p>
                   <p>{device.site.name}</p>
                   <p className="text-slate-500 dark:text-slate-500">
-                    {[device.site.address_line, device.site.city, device.site.country]
+                    {[
+                      device.site.address_line,
+                      device.site.city,
+                      device.site.country,
+                    ]
                       .filter(Boolean)
                       .join(", ") || "No address details"}
                   </p>
@@ -349,49 +366,67 @@ export default async function DeviceDetailPage({
               <div className="flex items-start gap-3 text-slate-600 dark:text-slate-400">
                 <Radio className="mt-0.5 h-4 w-4 shrink-0" />
                 <div>
-                  <p className="font-medium text-slate-900 dark:text-white">Sensors</p>
-                  <p>{device.sensors.length}</p>
-                  <div className="mt-2 space-y-2">
+                  <p className="font-medium text-slate-900 dark:text-white">
+                    Sensors
+                  </p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">
+                    {device.sensors.length} sensor
+                    {device.sensors.length === 1 ? "" : "s"}
+                  </p>
+                  <div className="mt-2 space-y-3">
                     {device.sensors.length === 0 ? (
                       <p className="text-slate-500 dark:text-slate-500">
                         No sensors attached
                       </p>
-                    ) : canManageDevice ? (
-                      <div className="mt-2 space-y-3">
-                        {device.sensors.map((sensor) => (
-                          <SensorSettingsAction
-                            key={sensor.sensor_id}
-                            sensorId={sensor.sensor_id}
-                            sensorTypeLabel={formatEnumLabel(String(sensor.sensor_type))}
-                            initialLocationLabel={sensor.location_label}
-                            initialStatus={sensor.status}
-                            initialEnabled={sensor.is_enabled}
-                          />
-                        ))}
-                      </div>
                     ) : (
-                      <div className="mt-2 space-y-2">
-                        {device.sensors.map((sensor) => (
-                          <div
-                            key={sensor.sensor_id}
-                            className="text-slate-500 dark:text-slate-500"
-                          >
-                            {formatEnumLabel(String(sensor.sensor_type))}
-                            {sensor.location_label ? ` • ${sensor.location_label}` : ""}
-                            {` • ${formatEnumLabel(String(sensor.status))}`}
-                            {sensor.is_enabled ? "" : " • Disabled"}
+                      device.sensors.map((sensor) => (
+                        <details
+                          key={sensor.sensor_id}
+                          className="group rounded-2xl border border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40"
+                        >
+                          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3">
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                                {formatEnumLabel(String(sensor.sensor_type))}
+                              </p>
+                              <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                                {sensor.location_label || "No location label"}{" "}
+                                {" • "}
+                                {formatEnumLabel(String(sensor.status))}
+                                {sensor.is_enabled
+                                  ? " • Enabled"
+                                  : " • Disabled"}
+                              </p>
+                            </div>
+
+                            <span className="text-xs text-slate-500 transition group-open:rotate-180 dark:text-slate-400">
+                              ▼
+                            </span>
+                          </summary>
+
+                          <div className="border-t border-slate-200 px-4 py-4 dark:border-slate-800">
+                            <SensorSettingsAction
+                              sensorId={sensor.sensor_id}
+                              sensorTypeLabel={formatEnumLabel(
+                                String(sensor.sensor_type),
+                              )}
+                              initialLocationLabel={sensor.location_label}
+                              initialStatus={sensor.status}
+                              initialEnabled={sensor.is_enabled}
+                            />
                           </div>
-                        ))}
-                      </div>
+                        </details>
+                      ))
                     )}
                   </div>
                 </div>
               </div>
-
               <div className="flex items-start gap-3 text-slate-600 dark:text-slate-400">
                 <Clock3 className="mt-0.5 h-4 w-4 shrink-0" />
                 <div>
-                  <p className="font-medium text-slate-900 dark:text-white">Timestamps</p>
+                  <p className="font-medium text-slate-900 dark:text-white">
+                    Timestamps
+                  </p>
                   <p>Created: {formatDateTime(device.created_at)}</p>
                   <p>Location: {device.location_label ?? "Not set"}</p>
                   <p>Last seen: {formatDateTime(device.last_seen_at)}</p>
@@ -401,7 +436,9 @@ export default async function DeviceDetailPage({
               <div className="flex items-start gap-3 text-slate-600 dark:text-slate-400">
                 <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
                 <div>
-                  <p className="font-medium text-slate-900 dark:text-white">Technical ID</p>
+                  <p className="font-medium text-slate-900 dark:text-white">
+                    Technical ID
+                  </p>
                   <p className="break-all">{device.device_id}</p>
                 </div>
               </div>
@@ -409,7 +446,9 @@ export default async function DeviceDetailPage({
               <div className="flex items-start gap-3 text-slate-600 dark:text-slate-400">
                 <Activity className="mt-0.5 h-4 w-4 shrink-0" />
                 <div>
-                  <p className="font-medium text-slate-900 dark:text-white">Recent activity</p>
+                  <p className="font-medium text-slate-900 dark:text-white">
+                    Recent activity
+                  </p>
                   <p>{recentReadings.length} readings loaded</p>
                   <p>{device.emergency_events.length} recent alerts loaded</p>
                 </div>

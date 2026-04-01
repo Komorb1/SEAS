@@ -78,11 +78,14 @@ describe("Sensor reading ingestion (Task #11)", () => {
     const sensor = await prisma.sensor.create({
       data: {
         device_id: DEVICE_ID,
+        external_key: "gas-1",
         sensor_type: "gas",
         is_enabled: true,
         status: "ok",
       },
-      select: { sensor_id: true },
+      select: {
+        sensor_id: true,
+      },
     });
 
     sensorId = sensor.sensor_id;

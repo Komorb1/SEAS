@@ -10,10 +10,12 @@ import {
   Activity,
 } from "lucide-react";
 import { StatCard } from "@/components/ui/stat-card";
+import { StatusBadge } from "@/components/ui/status-badge";
 import InstallPWAButton from "@/components/install-pwa-button";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentUserId } from "@/lib/auth";
 import { PageEmptyState } from "@/components/ui/page-states";
+import { getEffectiveDeviceStatus } from "@/lib/device-status";
 
 function formatDateTime(date: Date): string {
   return new Intl.DateTimeFormat("en-GB", {
@@ -78,6 +80,7 @@ export default async function DashboardPage() {
     title: string | null;
     event_type: string;
     severity: "low" | "medium" | "high" | "critical";
+    status: "new" | "acknowledged" | "resolved" | "false_alarm";
     started_at: Date;
     site: { name: string };
     device: { serial_number: string } | null;
@@ -103,14 +106,12 @@ export default async function DashboardPage() {
   let hasLiveDataError = false;
 
   try {
-    [
-      totalSites,
-      totalDevices,
-      offlineDevices,
-      maintenanceDevices,
-      activeAlerts,
-      recentAlerts,
-      recentAuditLogs,
+    const [
+      totalSitesResult,
+      devicesForStatus,
+      activeAlertsResult,
+      recentAlertsResult,
+      recentAuditLogsResult,
     ] = await Promise.all([
       prisma.site.count({
         where: {
@@ -122,7 +123,7 @@ export default async function DashboardPage() {
         },
       }),
 
-      prisma.device.count({
+      prisma.device.findMany({
         where: {
           site: {
             site_users: {
@@ -132,31 +133,10 @@ export default async function DashboardPage() {
             },
           },
         },
-      }),
-
-      prisma.device.count({
-        where: {
-          status: "offline",
-          site: {
-            site_users: {
-              some: {
-                user_id: userId,
-              },
-            },
-          },
-        },
-      }),
-
-      prisma.device.count({
-        where: {
-          status: "maintenance",
-          site: {
-            site_users: {
-              some: {
-                user_id: userId,
-              },
-            },
-          },
+        select: {
+          device_id: true,
+          status: true,
+          last_seen_at: true,
         },
       }),
 
@@ -249,6 +229,22 @@ export default async function DashboardPage() {
         take: 3,
       }),
     ]);
+
+    totalSites = totalSitesResult;
+    totalDevices = devicesForStatus.length;
+
+    const effectiveStatuses = devicesForStatus.map((device) =>
+      getEffectiveDeviceStatus(device.status, device.last_seen_at)
+    );
+
+    offlineDevices = effectiveStatuses.filter((status) => status === "offline").length;
+    maintenanceDevices = effectiveStatuses.filter(
+      (status) => status === "maintenance"
+    ).length;
+
+    activeAlerts = activeAlertsResult;
+    recentAlerts = recentAlertsResult;
+    recentAuditLogs = recentAuditLogsResult;
   } catch (error) {
     hasLiveDataError = true;
     console.error("Dashboard data load failed:", error);
@@ -306,118 +302,160 @@ export default async function DashboardPage() {
         />
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-2">
-        <section className="flex flex-col rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-4 dark:border-slate-800 sm:px-5">
-            <div className="min-w-0 pr-2">
-              <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-                Recent Alerts
-              </h3>
-              <p className="text-sm text-slate-500 dark:text-slate-400">
-                Latest emergency events across your assigned sites.
-              </p>
-            </div>
+  <section className="grid gap-6 xl:grid-cols-2">
+    <section className="flex flex-col rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-4 dark:border-slate-800 sm:px-5">
+        <div className="min-w-0 pr-2">
+          <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+            Recent Alerts
+          </h3>
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Latest emergency events across your assigned sites.
+          </p>
+        </div>
 
-            <Link
-              href="/alerts"
-              className="shrink-0 whitespace-nowrap text-xs font-medium leading-none text-red-600 transition hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 sm:text-sm"
-            >
-              View all
-            </Link>
-          </div>
+        <Link
+          href="/alerts"
+          className="shrink-0 whitespace-nowrap text-xs font-medium leading-none text-red-600 transition hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 sm:text-sm"
+        >
+          View all
+        </Link>
+      </div>
 
-          {recentAlerts.length === 0 ? (
-            <PageEmptyState
-              title={hasLiveDataError ? "Alerts unavailable offline" : "No recent alerts"}
-              description={
-                hasLiveDataError
-                  ? "Live alert data could not be loaded right now."
-                  : "No recent alerts were found for your assigned sites."
-              }
-              icon={<BellRing className="h-5 w-5" />}
-              className="py-8 xl:flex-1"
-            />
-          ) : (<></>)}
-        </section>
+      {recentAlerts.length === 0 ? (
+        <PageEmptyState
+          title={hasLiveDataError ? "Alerts unavailable offline" : "No recent alerts"}
+          description={
+            hasLiveDataError
+              ? "Live alert data could not be loaded right now."
+              : "No recent alerts were found for your assigned sites."
+          }
+          icon={<BellRing className="h-5 w-5" />}
+          className="py-8 xl:flex-1"
+        />
+      ) : (
+        <div className="p-4 sm:p-5">
+          <div className="space-y-3">
+            {recentAlerts.map((alert) => (
+              <article
+                key={alert.event_id}
+                className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="rounded-xl bg-red-100 p-2 text-red-700 dark:bg-red-950/40 dark:text-red-300">
+                    <BellRing className="h-4 w-4" />
+                  </div>
 
-        <section className="flex flex-col rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-          <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-4 dark:border-slate-800 sm:px-5">
-            <div className="flex min-w-0 flex-1 items-start gap-3 pr-2">
-              <div className="min-w-0 flex-1 pr-2">
-                <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-                  Recent Activity
-                </h3>
-                <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  Latest audit actions relevant to your workspace.
-                </p>
-              </div>
-            </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                        {alert.title?.trim() ||
+                          formatEventType(String(alert.event_type))}
+                      </p>
 
-            <Link
-              href="/audit-logs"
-              className="shrink-0 whitespace-nowrap text-xs font-medium leading-none text-red-600 transition hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 sm:text-sm"
-            >
-              View all
-            </Link>
-          </div>
-
-          {recentAuditLogs.length === 0 ? (
-            <PageEmptyState
-              title={hasLiveDataError ? "Activity unavailable offline" : "No recent activity"}
-              description={
-                hasLiveDataError
-                  ? "Live activity data could not be loaded right now."
-                  : "No recent activity was found."
-              }
-              icon={<Activity className="h-5 w-5" />}
-              className="py-8 xl:flex-1"
-            />
-          ) : (
-            <div className="p-4 sm:p-5">
-              <div className="space-y-3">
-                {recentAuditLogs.map((log) => (
-                  <article
-                    key={log.log_id}
-                    className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40"
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className="rounded-xl bg-slate-100 p-2 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                        <ClipboardList className="h-4 w-4" />
-                      </div>
-
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                          {formatEnumLabel(String(log.action_type))}
-                        </p>
-
-                        <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
-                          {log.user?.full_name?.trim() ||
-                            log.user?.username ||
-                            log.user?.email ||
-                            "Unknown user"}
-                        </p>
-
-                        <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                          {log.event?.site?.name ? `${log.event.site.name} • ` : ""}
-                          {log.event?.title?.trim() ||
-                            (log.event?.event_type
-                              ? formatEventType(String(log.event.event_type))
-                              : formatEnumLabel(String(log.target_type)))}
-                        </p>
-
-                        <div className="mt-2 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                          <Clock3 className="h-4 w-4 shrink-0" />
-                          <span>{formatOptionalDateTime(log.created_at)}</span>
-                        </div>
-                      </div>
+                      <StatusBadge status={alert.status} />
                     </div>
-                  </article>
-                ))}
-              </div>
-            </div>
-          )}
-        </section>
-      </section>
+
+                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                      {alert.site?.name || "Unknown site"}
+                    </p>
+
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      {formatEnumLabel(String(alert.severity))} •{" "}
+                      {formatEventType(String(alert.event_type))}
+                    </p>
+
+                    <div className="mt-2 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                      <Clock3 className="h-4 w-4 shrink-0" />
+                      <span>{formatOptionalDateTime(alert.started_at)}</span>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+
+    <section className="flex flex-col rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <div className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-4 dark:border-slate-800 sm:px-5">
+        <div className="flex min-w-0 flex-1 items-start gap-3 pr-2">
+          <div className="min-w-0 flex-1 pr-2">
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+              Recent Activity
+            </h3>
+            <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+              Latest audit actions relevant to your workspace.
+            </p>
+          </div>
+        </div>
+
+        <Link
+          href="/audit-logs"
+          className="shrink-0 whitespace-nowrap text-xs font-medium leading-none text-red-600 transition hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 sm:text-sm"
+        >
+          View all
+        </Link>
+      </div>
+
+      {recentAuditLogs.length === 0 ? (
+        <PageEmptyState
+          title={hasLiveDataError ? "Activity unavailable offline" : "No recent activity"}
+          description={
+            hasLiveDataError
+              ? "Live activity data could not be loaded right now."
+              : "No recent activity was found."
+          }
+          icon={<Activity className="h-5 w-5" />}
+          className="py-8 xl:flex-1"
+        />
+      ) : (
+        <div className="p-4 sm:p-5">
+          <div className="space-y-3">
+            {recentAuditLogs.map((log) => (
+              <article
+                key={log.log_id}
+                className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="rounded-xl bg-slate-100 p-2 text-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                    <ClipboardList className="h-4 w-4" />
+                  </div>
+
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                      {formatEnumLabel(String(log.action_type))}
+                    </p>
+
+                    <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+                      {log.user?.full_name?.trim() ||
+                        log.user?.username ||
+                        log.user?.email ||
+                        "Unknown user"}
+                    </p>
+
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      {log.event?.site?.name ? `${log.event.site.name} • ` : ""}
+                      {log.event?.title?.trim() ||
+                        (log.event?.event_type
+                          ? formatEventType(String(log.event.event_type))
+                          : formatEnumLabel(String(log.target_type)))}
+                    </p>
+
+                    <div className="mt-2 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                      <Clock3 className="h-4 w-4 shrink-0" />
+                      <span>{formatOptionalDateTime(log.created_at)}</span>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
+  </section>
     </div>
   );
 }

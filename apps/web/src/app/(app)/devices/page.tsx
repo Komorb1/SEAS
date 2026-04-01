@@ -4,6 +4,7 @@ import { StatusBadge } from "@/components/ui/status-badge";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentUserId } from "@/lib/auth";
 import { PageEmptyState } from "@/components/ui/page-states";
+import { getEffectiveDeviceStatus } from "@/lib/device-status";
 
 type UiDeviceStatus = "online" | "offline" | "warning";
 
@@ -149,7 +150,11 @@ export default async function DevicesPage() {
                       </div>
 
                       <div className="shrink-0">
-                        <StatusBadge status={mapDeviceStatus(device.status)} />
+                        <StatusBadge
+                          status={mapDeviceStatus(
+                            getEffectiveDeviceStatus(device.status, device.last_seen_at)
+                          )}
+                        />
                       </div>
                     </div>
 
@@ -227,7 +232,11 @@ export default async function DevicesPage() {
                         {device.site.name}
                       </td>
                       <td className="px-5 py-4">
-                        <StatusBadge status={mapDeviceStatus(device.status)} />
+                        <StatusBadge
+                          status={mapDeviceStatus(
+                            getEffectiveDeviceStatus(device.status, device.last_seen_at)
+                          )}
+                        />
                       </td>
                       <td className="px-5 py-4 text-slate-700 dark:text-slate-300">
                         {device._count.sensors}

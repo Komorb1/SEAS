@@ -14,6 +14,7 @@ const SensorTypeSchema = z.enum(["gas", "smoke", "flame", "motion", "door"]);
 const CreateSensorSchema = z.object({
   sensor_type: SensorTypeSchema,
   location_label: z.string().min(1).max(120).optional(),
+  external_key: z.string().min(1).max(100),
 });
 
 function isOwnerOrAdmin(role: string): boolean {
@@ -54,22 +55,24 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
 
     const sensor = await prisma.sensor.create({
       data: {
-        device_id: deviceId,
-        sensor_type: parsed.data.sensor_type,
-        location_label: parsed.data.location_label ?? null,
-        is_enabled: true,
-        status: "ok",
-      },
-      select: {
-        sensor_id: true,
-        device_id: true,
-        sensor_type: true,
-        location_label: true,
-        is_enabled: true,
-        status: true,
-        installed_at: true,
-      },
-    });
+          device_id: deviceId,
+          external_key: parsed.data.external_key,
+          sensor_type: parsed.data.sensor_type,
+          location_label: parsed.data.location_label ?? null,
+          is_enabled: true,
+          status: "ok",
+        },
+        select: {
+          sensor_id: true,
+          device_id: true,
+          external_key: true,
+          sensor_type: true,
+          location_label: true,
+          is_enabled: true,
+          status: true,
+          installed_at: true,
+        },
+      });
 
     return Response.json({ sensor }, { status: 201 });
   } catch (err: unknown) {
@@ -77,6 +80,17 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     if (msg === "unauthenticated") {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
+
+    if (typeof err === "object" && err !== null && "code" in err) {
+      const code = (err as { code?: string }).code;
+      if (code === "P2002") {
+        return Response.json(
+          { error: "external_key already exists for this device" },
+          { status: 409 }
+        );
+      }
+    }
+
     console.error("Create sensor error:", err);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
@@ -111,6 +125,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
       select: {
         sensor_id: true,
         device_id: true,
+        external_key: true,
         sensor_type: true,
         location_label: true,
         is_enabled: true,
@@ -126,6 +141,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     if (msg === "unauthenticated") {
       return Response.json({ error: "Unauthorized" }, { status: 401 });
     }
+
     console.error("List sensors error:", err);
     return Response.json({ error: "Internal server error" }, { status: 500 });
   }
