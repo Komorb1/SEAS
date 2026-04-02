@@ -37,6 +37,7 @@ describe("AlertsPage authorization", () => {
         title: "Gas leak",
         event_type: "gas",
         severity: "critical",
+        status: "new",
         description: "Dangerous gas level",
         started_at: new Date("2026-03-29T09:00:00.000Z"),
         site: { name: "Factory A" },
