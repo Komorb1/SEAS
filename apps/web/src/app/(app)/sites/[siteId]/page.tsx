@@ -7,6 +7,8 @@ import { SiteStatusAction } from "@/components/sites/site-status-action";
 import { RegisterDeviceForm } from "@/components/sites/register-device-form";
 import { DeleteSiteAction } from "@/components/sites/delete-site-action";
 import { SiteMembersManager } from "@/components/sites/site-members-manager";
+import { getEffectiveDeviceStatus } from "@/lib/device-status";
+import { StatusBadge } from "@/components/ui/status-badge";
 
 type SiteDetailsPageProps = {
   params: Promise<{
@@ -28,6 +30,15 @@ function formatOptionalDateTime(value: Date | string | null | undefined) {
     timeStyle: "short",
     timeZone: "Europe/Istanbul",
   }).format(date);
+}
+
+type UiDeviceStatus = "online" | "offline" | "warning";
+
+function mapDeviceStatus(
+  status: "online" | "offline" | "maintenance"
+): UiDeviceStatus {
+  if (status === "maintenance") return "warning";
+  return status;
 }
 
 export default async function SiteDetailsPage({
@@ -188,40 +199,48 @@ export default async function SiteDetailsPage({
           </div>
         ) : (
           <div className="divide-y divide-slate-200 dark:divide-slate-800">
-            {site.devices.map((device) => (
-              <div
-                key={device.device_id}
-                className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div className="min-w-0">
-                  <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                    {device.device_type}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    Serial: {device.serial_number}
-                  </p>
-                  <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                    Location: {device.location_label}
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
-                    Sensors: {device.sensors.length}
-                  </p>
-                </div>
+            {site.devices.map((device) => {
+              const effectiveStatus = getEffectiveDeviceStatus(
+                device.status,
+                device.last_seen_at
+              );
 
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-700 dark:bg-slate-800 dark:text-slate-300">
-                    {device.status}
-                  </span>
+              return (
+                <div
+                  key={device.device_id}
+                  className="flex flex-col gap-3 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
+                >
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-slate-900 dark:text-white">
+                      {device.device_type}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                      Serial: {device.serial_number}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                      Location: {device.location_label ?? "Not set"}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      Sensors: {device.sensors.length}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                      Last seen: {formatOptionalDateTime(device.last_seen_at)}
+                    </p>
+                  </div>
 
-                  <Link
-                    href={`/devices/${device.device_id}`}
-                    className="text-sm font-medium text-red-600 transition hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
-                  >
-                    View
-                  </Link>
+                  <div className="flex items-center gap-2">
+                    <StatusBadge status={mapDeviceStatus(effectiveStatus)} />
+
+                    <Link
+                      href={`/devices/${device.device_id}`}
+                      className="text-sm font-medium text-red-600 transition hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+                    >
+                      View
+                    </Link>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
