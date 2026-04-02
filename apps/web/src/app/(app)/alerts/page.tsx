@@ -6,20 +6,12 @@ import {
   TriangleAlert,
   Router,
 } from "lucide-react";
-import { StatusBadge } from "@/components/ui/status-badge";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentUserId } from "@/lib/auth";
 import { PageEmptyState } from "@/components/ui/page-states";
 import type { EventType, Severity } from "@prisma/client";
-type UiAlertSeverity = "online" | "warning" | "critical";
 
-function mapSeverityToUiStatus(
-  severity: "low" | "medium" | "high" | "critical"
-): UiAlertSeverity {
-  if (severity === "critical") return "critical";
-  if (severity === "medium" || severity === "high") return "warning";
-  return "online";
-}
+type UiAlertSeverity = "online" | "warning" | "critical";
 
 function formatEventType(eventType: string): string {
   return eventType
@@ -45,11 +37,98 @@ function AlertsOfflineNotice() {
   );
 }
 
+type AlertStatus = "new" | "acknowledged" | "resolved" | "false_alarm";
+
+function formatAlertStatus(status: AlertStatus): string {
+  return status
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function getAlertStatusBadgeClasses(status: AlertStatus): string {
+  switch (status) {
+    case "new":
+      return "border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-400";
+    case "acknowledged":
+      return "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-400";
+    case "resolved":
+      return "border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300";
+    case "false_alarm":
+      return "border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300";
+    default:
+      return "border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300";
+  }
+}
+
+function formatSeverityLabel(severity: Severity): string {
+  return severity.charAt(0).toUpperCase() + severity.slice(1);
+}
+
+function getAlertCardStyles(
+  severity: Severity,
+  status: AlertStatus
+): {
+  accent: string;
+  icon: string;
+  badge: UiAlertSeverity;
+} {
+  const isResolvedLike = status === "resolved" || status === "false_alarm";
+
+  if (isResolvedLike) {
+    if (severity === "critical") {
+      return {
+        accent: "border-l-slate-400 dark:border-l-slate-600",
+        icon: "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400",
+        badge: "critical",
+      };
+    }
+
+    if (severity === "medium" || severity === "high") {
+      return {
+        accent: "border-l-slate-400 dark:border-l-slate-600",
+        icon: "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400",
+        badge: "warning",
+      };
+    }
+
+    return {
+      accent: "border-l-slate-400 dark:border-l-slate-600",
+      icon: "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400",
+      badge: "online",
+    };
+  }
+
+  if (severity === "critical") {
+    return {
+      accent: "border-l-red-500",
+      icon: "bg-red-500/10 text-red-600 dark:text-red-400",
+      badge: "critical",
+    };
+  }
+
+  if (severity === "medium" || severity === "high") {
+    return {
+      accent: "border-l-amber-500",
+      icon: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+      badge: "warning",
+    };
+  }
+
+  return {
+    accent: "border-l-emerald-500",
+    icon: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+    badge: "online",
+  };
+}
+
+
 type AlertListItem = {
   event_id: string;
   title: string | null;
   event_type: EventType;
   severity: Severity;
+  status: "new" | "acknowledged" | "resolved" | "false_alarm";
   description: string | null;
   started_at: Date;
   site: {
@@ -59,6 +138,7 @@ type AlertListItem = {
     serial_number: string;
   } | null;
 };
+
 
 export default async function AlertsPage() {
   const userId = await requireCurrentUserId();
@@ -98,7 +178,11 @@ export default async function AlertsPage() {
     console.error("Alerts data load failed:", error);
   }
 
-  const criticalCount = alerts.filter(
+  const openAlerts = alerts.filter(
+    (alert) => alert.status === "new" || alert.status === "acknowledged"
+  );
+
+  const criticalCount = openAlerts.filter(
     (alert) => alert.severity === "critical"
   ).length;
 
@@ -116,9 +200,9 @@ export default async function AlertsPage() {
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="inline-flex w-fit items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
-            Total alerts:
+            Open alerts:
             <span className="ml-2 font-semibold text-slate-900 dark:text-white">
-              {hasLiveDataError ? "—" : alerts.length}
+              {hasLiveDataError ? "—" : openAlerts.length}
             </span>
           </div>
 
@@ -148,21 +232,7 @@ export default async function AlertsPage() {
       ) : (
         <section className="space-y-4">
           {alerts.map((alert) => {
-            const uiSeverity = mapSeverityToUiStatus(alert.severity);
-
-            const accentStyles =
-              uiSeverity === "critical"
-                ? "border-l-red-500"
-                : uiSeverity === "warning"
-                  ? "border-l-amber-500"
-                  : "border-l-emerald-500";
-
-            const iconStyles =
-              uiSeverity === "critical"
-                ? "bg-red-500/10 text-red-600 dark:text-red-400"
-                : uiSeverity === "warning"
-                  ? "bg-amber-500/10 text-amber-600 dark:text-amber-400"
-                  : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400";
+            const cardStyles = getAlertCardStyles(alert.severity, alert.status);
 
             return (
               <Link
@@ -173,14 +243,14 @@ export default async function AlertsPage() {
                 <article
                   className={[
                     "rounded-2xl border border-slate-200 border-l-4 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 sm:p-5",
-                    accentStyles,
+                    cardStyles.accent,
                   ].join(" ")}
                 >
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start gap-3">
-                        <div className={["mt-0.5 rounded-xl p-2", iconStyles].join(" ")}>
-                          {uiSeverity === "critical" ? (
+                        <div className={["mt-0.5 rounded-xl p-2", cardStyles.icon].join(" ")}>
+                          {cardStyles.badge === "critical" ? (
                             <TriangleAlert className="h-5 w-5" />
                           ) : (
                             <BellRing className="h-5 w-5" />
@@ -191,8 +261,14 @@ export default async function AlertsPage() {
                           <p className="text-xs font-medium tracking-wide text-slate-500 dark:text-slate-500">
                             {alert.event_id}
                           </p>
-
-                          <h3 className="mt-1 text-lg font-semibold text-slate-900 dark:text-white">
+                          <h3
+                            className={[
+                              "mt-1 text-lg font-semibold",
+                              alert.status === "resolved" || alert.status === "false_alarm"
+                                ? "text-slate-600 dark:text-slate-300"
+                                : "text-slate-900 dark:text-white"
+                            ].join(" ")}
+                          >
                             {alert.title?.trim() || formatEventType(alert.event_type)}
                           </h3>
                         </div>
@@ -217,15 +293,44 @@ export default async function AlertsPage() {
                         </div>
 
                         {alert.description ? (
-                          <div className="text-slate-500 dark:text-slate-400 sm:col-span-2">
+                          <div
+                            className={[
+                              "sm:col-span-2",
+                              alert.status === "resolved" || alert.status === "false_alarm"
+                                ? "text-slate-400 dark:text-slate-500"
+                                : "text-slate-500 dark:text-slate-400",
+                            ].join(" ")}
+                          >
                             {alert.description}
                           </div>
                         ) : null}
                       </div>
                     </div>
 
-                    <div className="flex shrink-0 items-start sm:justify-end">
-                      <StatusBadge status={uiSeverity} />
+                    <div className="flex shrink-0 items-start gap-2 sm:justify-end">
+                      <span
+                        className={[
+                          "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium whitespace-nowrap",
+                          alert.status === "resolved" || alert.status === "false_alarm"
+                            ? "border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                            : cardStyles.badge === "critical"
+                              ? "border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-400"
+                              : cardStyles.badge === "warning"
+                                ? "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                                : "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+                        ].join(" ")}
+                      >
+                        {formatSeverityLabel(alert.severity)}
+                      </span>
+
+                      <span
+                        className={[
+                          "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium whitespace-nowrap",
+                          getAlertStatusBadgeClasses(alert.status),
+                        ].join(" ")}
+                      >
+                        {formatAlertStatus(alert.status)}
+                      </span>
                     </div>
                   </div>
                 </article>
