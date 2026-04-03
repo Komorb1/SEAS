@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { usePathname, useRouter } from "next/navigation";
 
 type AlertsAutoRefreshProps = {
@@ -12,6 +12,7 @@ export function AlertsAutoRefresh({
 }: AlertsAutoRefreshProps) {
   const router = useRouter();
   const pathname = usePathname();
+  const inFlightRef = useRef(false);
 
   useEffect(() => {
     if (pathname !== "/alerts") {
@@ -19,12 +20,19 @@ export function AlertsAutoRefresh({
     }
 
     function refreshAlerts() {
-      if (document.visibilityState !== "visible") {
+      if (inFlightRef.current) {
         return;
       }
 
+      inFlightRef.current = true;
       router.refresh();
+
+      window.setTimeout(() => {
+        inFlightRef.current = false;
+      }, 1000);
     }
+
+    refreshAlerts();
 
     const intervalId = window.setInterval(refreshAlerts, intervalMs);
 
