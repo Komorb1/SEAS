@@ -21,6 +21,9 @@ export function isPushSupported(): boolean {
 }
 
 export async function registerPushServiceWorker() {
+  const existing = await navigator.serviceWorker.getRegistration("/sw.js");
+  if (existing) return existing;
+
   return navigator.serviceWorker.register("/sw.js");
 }
 
@@ -44,7 +47,9 @@ export async function fetchPushPublicKey(): Promise<string> {
 }
 
 export async function subscribeBrowserToPush(deviceLabel?: string | null) {
-  const registration = await registerPushServiceWorker();
+  await registerPushServiceWorker();
+
+  const registration = await navigator.serviceWorker.ready;
   const publicKey = await fetchPushPublicKey();
 
   let subscription = await registration.pushManager.getSubscription();

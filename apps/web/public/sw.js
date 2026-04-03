@@ -1,7 +1,5 @@
-const STATIC_CACHE = "seas-static-v10";
-const PAGE_CACHE = "seas-pages-v10";
-const API_CACHE = "seas-api-v10";
-
+const STATIC_CACHE = "seas-static-v11";
+const PAGE_CACHE = "seas-pages-v11";
 const OFFLINE_URL = "/offline.html";
 
 const STATIC_ASSETS = [
@@ -10,6 +8,26 @@ const STATIC_ASSETS = [
   "/icon.ico",
   "/icons/icon-192x192.png",
   "/icons/icon-512x512.png",
+];
+
+const NON_CACHEABLE_PAGE_PREFIXES = [
+  "/dashboard",
+  "/alerts",
+  "/devices",
+  "/sites",
+  "/profile",
+  "/audit-logs",
+  "/readings",
+];
+
+const NON_CACHEABLE_API_PREFIXES = [
+  "/api/auth",
+  "/api/alerts",
+  "/api/profile",
+  "/api/readings",
+  "/api/devices",
+  "/api/sites",
+  "/api/push",
 ];
 
 self.addEventListener("install", (event) => {
@@ -25,12 +43,7 @@ self.addEventListener("activate", (event) => {
       const keys = await caches.keys();
       await Promise.all(
         keys
-          .filter(
-            (key) =>
-              key !== STATIC_CACHE &&
-              key !== PAGE_CACHE &&
-              key !== API_CACHE
-          )
+          .filter((key) => key !== STATIC_CACHE && key !== PAGE_CACHE)
           .map((key) => caches.delete(key))
       );
       await self.clients.claim();
@@ -47,7 +60,25 @@ self.addEventListener("fetch", (event) => {
 
   if (url.origin !== self.location.origin) return;
 
-  // Page navigations
+  // Never cache auth-sensitive API routes
+  if (
+    url.pathname.startsWith("/api/") &&
+    NON_CACHEABLE_API_PREFIXES.some((path) => url.pathname.startsWith(path))
+  ) {
+    event.respondWith(fetch(request));
+    return;
+  }
+
+  // Do not cache authenticated/protected app pages
+  if (
+    request.mode === "navigate" &&
+    NON_CACHEABLE_PAGE_PREFIXES.some((path) => url.pathname.startsWith(path))
+  ) {
+    event.respondWith(fetch(request));
+    return;
+  }
+
+  // Page navigations for cacheable pages
   if (request.mode === "navigate") {
     event.respondWith(
       (async () => {
@@ -116,36 +147,21 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // API GET requests
+  // Other API GET requests: network only
   if (url.pathname.startsWith("/api/")) {
     event.respondWith(
-      (async () => {
-        try {
-          const response = await fetch(request);
-
-          if (response.ok) {
-            const cache = await caches.open(API_CACHE);
-            await cache.put(request, response.clone());
+      fetch(request).catch(() =>
+        new Response(
+          JSON.stringify({
+            error: "offline",
+            message: "Live data is unavailable while offline.",
+          }),
+          {
+            status: 503,
+            headers: { "Content-Type": "application/json" },
           }
-
-          return response;
-        } catch {
-          const apiCache = await caches.open(API_CACHE);
-          const cached = await apiCache.match(request);
-          if (cached) return cached;
-
-          return new Response(
-            JSON.stringify({
-              error: "offline",
-              message: "Live data is unavailable while offline.",
-            }),
-            {
-              status: 503,
-              headers: { "Content-Type": "application/json" },
-            }
-          );
-        }
-      })()
+        )
+      )
     );
     return;
   }

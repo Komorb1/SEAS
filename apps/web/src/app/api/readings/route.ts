@@ -126,6 +126,10 @@ export async function POST(req: NextRequest) {
         select: {
           event_id: true,
           site_id: true,
+          event_type: true,
+          severity: true,
+          status: true,
+          title: true,
         },
         orderBy: {
           started_at: "desc",

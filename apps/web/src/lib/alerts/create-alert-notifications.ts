@@ -49,7 +49,7 @@ export async function createAlertNotificationsForEvent(
   const siteUsers = await prisma.siteUser.findMany({
     where: {
       site_id: input.siteId,
-      role: { in: ["owner", "admin"] },
+      role: { in: ["owner", "admin", "viewer"] },
     },
     select: {
       user_id: true,
@@ -147,11 +147,11 @@ export async function createAlertNotificationsForEvent(
     const payload = {
       title,
       body: bodyParts.join(" • "),
-      icon: "/icons/icon-192.png",
-      badge: "/icons/icon-192.png",
+      icon: "/icons/icon-192x192.png",
+      badge: "/icons/icon-192x192.png",
       tag: `event-${event.event_id}`,
       data: {
-        url: `/alerts/${alertNotification.alert_id}`,
+        url: `/alerts/${event.event_id}`,
         alertId: alertNotification.alert_id,
         eventId: event.event_id,
         siteId: event.site_id,

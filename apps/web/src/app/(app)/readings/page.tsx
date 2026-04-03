@@ -3,11 +3,12 @@ import {
   Clock3,
   Cpu,
   Radio,
-  Search
+  Search,
 } from "lucide-react";
 import { PageEmptyState } from "@/components/ui/page-states";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentUserId } from "@/lib/auth";
+import { RefreshReadingsButton } from "@/components/readings/refresh-readings-button";
 
 type ReadingsPageProps = {
   searchParams?: Promise<{
@@ -48,6 +49,8 @@ export default async function ReadingsPage({
   const selectedSiteId = params.siteId?.trim() || "";
   const selectedDeviceId = params.deviceId?.trim() || "";
   const selectedSensorType = params.sensorType?.trim() || "";
+
+  const pageRenderedAt = new Date();
 
   const authorizedSites = await prisma.site.findMany({
     where: {
@@ -272,13 +275,19 @@ export default async function ReadingsPage({
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-4 dark:border-slate-800 sm:px-5">
-          <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-            Recent Readings
-          </h3>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            Sorted by newest first across all your accessible devices.
-          </p>
+        <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 dark:border-slate-800 sm:px-5">
+          <div>
+            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
+              Recent Readings
+            </h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Sorted by newest first across all your accessible devices.
+            </p>
+          </div>
+
+          <RefreshReadingsButton
+            lastUpdatedLabel={formatDateTime(pageRenderedAt)}
+          />
         </div>
 
         {readings.length === 0 ? (

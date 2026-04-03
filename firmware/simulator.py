@@ -1,18 +1,21 @@
 from __future__ import annotations
 
+import argparse
 import json
 import random
-import sys
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from urllib import error, request
 
 
 CONFIG_PATH = Path(__file__).with_name("config.json")
 DEVICE_SECRET_PATH = Path(__file__).with_name("device_secret.txt")
+DEFAULT_QUALITY_FLAG = "ok"
+SUPPORTED_MODES = {"single", "burst", "continuous"}
+SUPPORTED_SCENARIOS = {"normal", "gas_leak", "fire", "intrusion", "mixed"}
 
 
 @dataclass
@@ -30,7 +33,7 @@ class AppConfig:
     device_serial_number: str
     interval_seconds: int
     request_timeout_seconds: int
-    gas: SensorConfig
+    sensors: List[SensorConfig] = field(default_factory=list)
 
 
 class SimulatorError(Exception):
@@ -40,6 +43,18 @@ class SimulatorError(Exception):
 def log(level: str, message: str) -> None:
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     print(f"[{ts}] [{level}] {message}")
+
+
+def parse_sensor_entry(name: str, raw: Dict[str, Any]) -> SensorConfig:
+    external_key = str(raw.get("external_key") or name)
+    sensor_type = str(raw.get("sensor_type") or name)
+    return SensorConfig(
+        external_key=external_key,
+        sensor_type=sensor_type,
+        location_label=str(raw.get("location_label") or f"{sensor_type.title()} sensor"),
+        unit=str(raw.get("unit") or default_unit_for_sensor_type(sensor_type)),
+    )
+
 
 
 def load_config(path: Path) -> AppConfig:
@@ -55,21 +70,39 @@ def load_config(path: Path) -> AppConfig:
         raise SimulatorError(f"Invalid JSON in {path}: {exc}") from exc
 
     try:
-        gas = data["sensors"]["gas"]
+        raw_sensors = data["sensors"]
+        sensors: List[SensorConfig] = []
+
+        if isinstance(raw_sensors, list):
+            for index, sensor in enumerate(raw_sensors, start=1):
+                if not isinstance(sensor, dict):
+                    raise SimulatorError(
+                        f"Sensor entry #{index} must be an object, got {type(sensor).__name__}"
+                    )
+                sensors.append(parse_sensor_entry(f"sensor-{index}", sensor))
+        elif isinstance(raw_sensors, dict):
+            for name, sensor in raw_sensors.items():
+                if not isinstance(sensor, dict):
+                    raise SimulatorError(
+                        f"Sensor '{name}' must be an object, got {type(sensor).__name__}"
+                    )
+                sensors.append(parse_sensor_entry(str(name), sensor))
+        else:
+            raise SimulatorError("'sensors' must be either an object or an array")
+
+        if not sensors:
+            raise SimulatorError("config must contain at least one sensor")
+
         return AppConfig(
             base_url=str(data["base_url"]).rstrip("/"),
             device_serial_number=str(data["device_serial_number"]),
             interval_seconds=int(data.get("interval_seconds", 5)),
             request_timeout_seconds=int(data.get("request_timeout_seconds", 15)),
-            gas=SensorConfig(
-                external_key=str(gas["external_key"]),
-                sensor_type=str(gas["sensor_type"]),
-                location_label=str(gas.get("location_label", "Gas input")),
-                unit=str(gas.get("unit", "ppm")),
-            ),
+            sensors=sensors,
         )
     except KeyError as exc:
         raise SimulatorError(f"Missing required config key: {exc}") from exc
+
 
 
 def read_stored_secret(path: Path) -> Optional[str]:
@@ -80,8 +113,10 @@ def read_stored_secret(path: Path) -> Optional[str]:
     return secret or None
 
 
+
 def write_stored_secret(path: Path, secret: str) -> None:
     path.write_text(secret, encoding="utf-8")
+
 
 
 def http_json(
@@ -118,20 +153,112 @@ def http_json(
         raise SimulatorError(f"Network error calling {url}: {exc}") from exc
 
 
+
+def default_unit_for_sensor_type(sensor_type: str) -> str:
+    sensor_type = sensor_type.lower()
+    if sensor_type == "gas":
+        return "ppm"
+    if sensor_type in {"flame", "motion", "door", "smoke"}:
+        return "state"
+    return "value"
+
+
+
+def generate_sensor_value(sensor_type: str, scenario: str, cycle_number: int) -> int:
+    sensor_type = sensor_type.lower()
+
+    if sensor_type == "gas":
+        if scenario == "normal":
+            return random.randint(90, 180)
+        if scenario == "gas_leak":
+            return random.randint(620, 780)
+        if scenario == "mixed":
+            if cycle_number % 5 == 0:
+                return random.randint(650, 800)
+            if cycle_number % 3 == 0:
+                return random.randint(320, 520)
+            return random.randint(100, 190)
+        return random.randint(90, 180)
+
+    if sensor_type in {"flame", "smoke"}:
+        if scenario == "fire":
+            return 1
+        if scenario == "mixed":
+            return 1 if cycle_number % 4 == 0 else 0
+        return 0
+
+    if sensor_type in {"motion", "door"}:
+        if scenario == "intrusion":
+            return 1
+        if scenario == "mixed":
+            return 1 if cycle_number % 3 == 0 else 0
+        return 0
+
+    if scenario == "mixed" and cycle_number % 4 == 0:
+        return random.randint(70, 100)
+    return random.randint(0, 50)
+
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="SEAS device simulator")
+    parser.add_argument(
+        "scenario",
+        nargs="?",
+        default="normal",
+        choices=sorted(SUPPORTED_SCENARIOS),
+        help="reading scenario to simulate",
+    )
+    parser.add_argument(
+        "--mode",
+        default="continuous",
+        choices=sorted(SUPPORTED_MODES),
+        help="single = 1 cycle, burst = N cycles, continuous = forever",
+    )
+    parser.add_argument(
+        "--count",
+        type=int,
+        default=5,
+        help="number of cycles for burst mode",
+    )
+    parser.add_argument(
+        "--sensor",
+        action="append",
+        dest="sensors",
+        help="sensor type to include; repeat to include more than one",
+    )
+    parser.add_argument(
+        "--all-sensors",
+        action="store_true",
+        help="send readings for every sensor in config",
+    )
+    return parser.parse_args()
+
+
 class SeasSimulator:
-    def __init__(self, config: AppConfig, scenario: str) -> None:
+    def __init__(
+        self,
+        config: AppConfig,
+        scenario: str,
+        mode: str,
+        burst_count: int,
+        selected_sensor_types: Optional[List[str]] = None,
+        include_all_sensors: bool = False,
+    ) -> None:
         self.config = config
         self.scenario = scenario
+        self.mode = mode
+        self.burst_count = burst_count
         self.device_token: Optional[str] = None
         self.token_expires_at = 0.0
-        self.loop_count = 0
+        self.cycle_count = 0
         self.device_secret: Optional[str] = read_stored_secret(DEVICE_SECRET_PATH)
+        self.include_all_sensors = include_all_sensors
+        self.selected_sensor_types = [s.lower() for s in (selected_sensor_types or [])]
 
         self.provision_url = f"{self.config.base_url}/api/devices/provision"
         self.auth_url = f"{self.config.base_url}/api/devices/auth"
-        self.sync_sensors_url = (
-            f"{self.config.base_url}/api/devices/sensors/sync"
-        )
+        self.sync_sensors_url = f"{self.config.base_url}/api/devices/sensors/sync"
         self.readings_url = f"{self.config.base_url}/api/readings"
 
     def provision(self) -> None:
@@ -201,18 +328,39 @@ class SeasSimulator:
         if not self.device_token or time.time() >= self.token_expires_at:
             self.authenticate()
 
+    def get_target_sensors(self) -> List[SensorConfig]:
+        if self.include_all_sensors or not self.selected_sensor_types:
+            return self.config.sensors
+
+        selected = [
+            sensor
+            for sensor in self.config.sensors
+            if sensor.sensor_type.lower() in self.selected_sensor_types
+        ]
+
+        if not selected:
+            available = ", ".join(sorted({sensor.sensor_type for sensor in self.config.sensors}))
+            requested = ", ".join(self.selected_sensor_types)
+            raise SimulatorError(
+                f"No configured sensors matched --sensor {requested}. Available sensor types: {available}"
+            )
+
+        return selected
+
     def sync_sensors(self) -> None:
         self.ensure_token()
+        target_sensors = self.get_target_sensors()
 
-        log("INFO", "Syncing device sensors...")
+        log("INFO", f"Syncing {len(target_sensors)} sensor(s)...")
 
         payload = {
             "sensors": [
                 {
-                    "external_key": self.config.gas.external_key,
-                    "sensor_type": self.config.gas.sensor_type,
-                    "location_label": self.config.gas.location_label,
+                    "external_key": sensor.external_key,
+                    "sensor_type": sensor.sensor_type,
+                    "location_label": sensor.location_label,
                 }
+                for sensor in target_sensors
             ]
         }
 
@@ -227,86 +375,67 @@ class SeasSimulator:
         if status != 200:
             raise SimulatorError(f"Sensor sync failed ({status}): {data}")
 
-        sensors = data.get("sensors")
-        if not isinstance(sensors, list) or not sensors:
+        synced_sensors = data.get("sensors")
+        if not isinstance(synced_sensors, list) or not synced_sensors:
             raise SimulatorError(f"Sensor sync response missing sensors: {data}")
 
-        gas_sensor = next(
-            (
-                sensor
-                for sensor in sensors
-                if sensor.get("external_key") == self.config.gas.external_key
-            ),
-            None,
-        )
+        sensors_by_external_key = {
+            str(sensor.get("external_key")): sensor
+            for sensor in synced_sensors
+            if isinstance(sensor, dict)
+        }
 
-        if not gas_sensor:
-            raise SimulatorError(
-                f"Sensor sync response missing gas sensor for external_key={self.config.gas.external_key}"
+        for sensor in target_sensors:
+            synced = sensors_by_external_key.get(sensor.external_key)
+            if not synced:
+                raise SimulatorError(
+                    f"Sensor sync response missing sensor for external_key={sensor.external_key}"
+                )
+
+            sensor_id = synced.get("sensor_id")
+            if not sensor_id or not isinstance(sensor_id, str):
+                raise SimulatorError(f"Sensor sync response missing sensor_id: {synced}")
+
+            sensor.sensor_id = sensor_id
+            log(
+                "OK",
+                f"Sensor ready: type={sensor.sensor_type} external_key={sensor.external_key} sensor_id={sensor.sensor_id}"
             )
 
-        sensor_id = gas_sensor.get("sensor_id")
-        if not sensor_id or not isinstance(sensor_id, str):
-            raise SimulatorError(f"Sensor sync response missing sensor_id: {gas_sensor}")
-
-        self.config.gas.sensor_id = sensor_id
-
-        log(
-            "OK",
-            f"Sensor sync succeeded. external_key={self.config.gas.external_key} "
-            f"sensor_id={self.config.gas.sensor_id}"
-        )
-
     def ensure_synced_sensors(self) -> None:
-        if self.config.gas.sensor_id:
+        unsynced = [sensor for sensor in self.get_target_sensors() if not sensor.sensor_id]
+        if not unsynced:
             return
         self.sync_sensors()
 
-    def generate_gas_value(self) -> int:
-        """
-        Backend thresholds:
-        - >= 300 => high gas event
-        - >= 600 => critical gas event
-        """
-        if self.scenario == "normal":
-            return random.randint(90, 180)
+    def build_reading_payload(self, sensor: SensorConfig) -> Dict[str, Any]:
+        if not sensor.sensor_id:
+            raise SimulatorError(f"Sensor {sensor.external_key} is missing sensor_id")
 
-        if self.scenario == "gas_leak":
-            return random.randint(620, 780)
-
-        if self.scenario == "mixed":
-            if self.loop_count > 0 and self.loop_count % 5 == 0:
-                return random.randint(650, 800)
-            return random.randint(100, 190)
-
-        raise SimulatorError(
-            f"Unsupported scenario '{self.scenario}'. "
-            f"Use one of: normal, gas_leak, mixed"
+        value = generate_sensor_value(
+            sensor_type=sensor.sensor_type,
+            scenario=self.scenario,
+            cycle_number=self.cycle_count,
         )
 
-    def build_reading_payload(self) -> Dict[str, Any]:
-        self.ensure_synced_sensors()
-
-        gas_value = self.generate_gas_value()
-
         return {
-            "sensor_id": self.config.gas.sensor_id,
-            "value": gas_value,
-            "unit": self.config.gas.unit,
+            "sensor_id": sensor.sensor_id,
+            "value": value,
+            "unit": sensor.unit,
             "recorded_at": datetime.now(timezone.utc)
             .replace(microsecond=0)
             .strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "quality_flag": "ok",
+            "quality_flag": DEFAULT_QUALITY_FLAG,
         }
 
-    def send_reading(self) -> None:
+    def send_one_reading(self, sensor: SensorConfig) -> None:
         self.ensure_token()
-        payload = self.build_reading_payload()
+        payload = self.build_reading_payload(sensor)
 
         log(
             "INFO",
-            f"Sending gas reading value={payload['value']} {payload['unit']} "
-            f"scenario={self.scenario}"
+            f"Sending {sensor.sensor_type} reading value={payload['value']} {payload['unit']} "
+            f"scenario={self.scenario} cycle={self.cycle_count}"
         )
 
         status, data = http_json(
@@ -318,7 +447,10 @@ class SeasSimulator:
         )
 
         if status != 201:
-            log("ERROR", f"Reading submission failed ({status}): {data}")
+            log(
+                "ERROR",
+                f"Reading submission failed for {sensor.sensor_type} ({status}): {data}"
+            )
             return
 
         reading = data.get("reading", {})
@@ -327,46 +459,81 @@ class SeasSimulator:
 
         log(
             "OK",
-            f"Reading stored: reading_id={reading.get('reading_id')} "
+            f"Reading stored: sensor_type={sensor.sensor_type} reading_id={reading.get('reading_id')} "
             f"value={reading.get('value')} unit={reading.get('unit')}"
         )
 
         if event:
             log(
                 "ALERT",
-                f"Event created/reused: "
-                f"event_id={event.get('event_id')} "
-                f"type={event.get('event_type')} "
-                f"severity={event.get('severity')} "
+                f"Event created/reused: event_id={event.get('event_id')} "
+                f"type={event.get('event_type')} severity={event.get('severity')} "
                 f"notifications_created={notifications_created}"
             )
 
+    def send_cycle(self) -> None:
+        self.ensure_synced_sensors()
+        target_sensors = self.get_target_sensors()
+        log("INFO", f"Cycle {self.cycle_count}: sending {len(target_sensors)} reading(s)")
+        for sensor in target_sensors:
+            self.send_one_reading(sensor)
+
     def run(self) -> None:
-        log("INFO", f"Starting SEAS simulator in '{self.scenario}' mode")
+        target_sensors = self.get_target_sensors()
+        sensor_summary = ", ".join(sensor.sensor_type for sensor in target_sensors)
+
+        log("INFO", f"Starting SEAS simulator scenario='{self.scenario}' mode='{self.mode}'")
         log("INFO", f"Base URL: {self.config.base_url}")
-        log("INFO", f"Interval: {self.config.interval_seconds}s")
+        log("INFO", f"Selected sensors: {sensor_summary}")
+        if self.mode == "burst":
+            log("INFO", f"Burst cycles: {self.burst_count}")
+        if self.mode == "continuous":
+            log("INFO", f"Interval: {self.config.interval_seconds}s")
+
+        if self.mode == "single":
+            self.cycle_count = 1
+            self.send_cycle()
+            return
+
+        if self.mode == "burst":
+            if self.burst_count <= 0:
+                raise SimulatorError("--count must be greater than 0 in burst mode")
+            for cycle in range(1, self.burst_count + 1):
+                self.cycle_count = cycle
+                self.send_cycle()
+                if cycle < self.burst_count:
+                    time.sleep(self.config.interval_seconds)
+            return
 
         while True:
-            self.loop_count += 1
+            self.cycle_count += 1
             try:
-                self.send_reading()
-            except SimulatorError as exc:
-                log("ERROR", str(exc))
+                self.send_cycle()
             except KeyboardInterrupt:
                 log("INFO", "Simulator stopped by user.")
                 raise
+            except SimulatorError as exc:
+                log("ERROR", str(exc))
             except Exception as exc:
                 log("ERROR", f"Unexpected error: {exc}")
 
             time.sleep(self.config.interval_seconds)
 
 
+
 def main() -> int:
-    scenario = sys.argv[1] if len(sys.argv) > 1 else "normal"
+    args = parse_args()
 
     try:
         config = load_config(CONFIG_PATH)
-        simulator = SeasSimulator(config=config, scenario=scenario)
+        simulator = SeasSimulator(
+            config=config,
+            scenario=args.scenario,
+            mode=args.mode,
+            burst_count=args.count,
+            selected_sensor_types=args.sensors,
+            include_all_sensors=args.all_sensors,
+        )
         simulator.run()
         return 0
     except KeyboardInterrupt:

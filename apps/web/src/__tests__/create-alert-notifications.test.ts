@@ -200,11 +200,11 @@ describe("createAlertNotificationsForEvent", () => {
       {
         title: "Critical Gas Leak Alert",
         body: "Factory A • ESP32-001 • Dangerous gas level detected",
-        icon: "/icons/icon-192.png",
-        badge: "/icons/icon-192.png",
+        icon: "/icons/icon-192x192.png",
+        badge: "/icons/icon-192x192.png",
         tag: "event-event-1",
         data: {
-          url: "/alerts/alert-1",
+          url: "/alerts/event-1",
           alertId: "alert-1",
           eventId: "event-1",
           siteId: "site-1",

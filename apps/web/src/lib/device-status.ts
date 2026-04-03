@@ -1,11 +1,11 @@
-export type DeviceStatusValue = "online" | "offline" | "maintenance";
+export type EffectiveDeviceStatus = "online" | "offline" | "maintenance";
 
-const ONLINE_THRESHOLD_MS = 60_000;
+const DEVICE_OFFLINE_THRESHOLD_MS = 60 * 1000;
 
 export function getEffectiveDeviceStatus(
-  status: DeviceStatusValue,
+  status: "online" | "offline" | "maintenance",
   lastSeenAt: Date | null
-): DeviceStatusValue {
+): EffectiveDeviceStatus {
   if (status === "maintenance") {
     return "maintenance";
   }
@@ -14,7 +14,13 @@ export function getEffectiveDeviceStatus(
     return "offline";
   }
 
-  const ageMs = Date.now() - new Date(lastSeenAt).getTime();
+  const lastSeenTime = new Date(lastSeenAt).getTime();
 
-  return ageMs <= ONLINE_THRESHOLD_MS ? "online" : "offline";
+  if (Number.isNaN(lastSeenTime)) {
+    return "offline";
+  }
+
+  const isStale = Date.now() - lastSeenTime > DEVICE_OFFLINE_THRESHOLD_MS;
+
+  return isStale ? "offline" : "online";
 }

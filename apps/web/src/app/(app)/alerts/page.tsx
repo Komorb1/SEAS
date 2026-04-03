@@ -10,6 +10,7 @@ import { prisma } from "@/lib/prisma";
 import { requireCurrentUserId } from "@/lib/auth";
 import { PageEmptyState } from "@/components/ui/page-states";
 import type { EventType, Severity } from "@prisma/client";
+import { AlertsAutoRefresh } from "@/components/alerts/alerts-auto-refresh";
 
 type UiAlertSeverity = "online" | "warning" | "critical";
 
@@ -188,6 +189,8 @@ export default async function AlertsPage() {
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6">
+      <AlertsAutoRefresh />
+      
       <section className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-3xl">

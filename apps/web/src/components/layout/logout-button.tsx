@@ -9,8 +9,7 @@ export function LogoutButton() {
   async function handleLogout() {
     try {
       await logoutUser();
-      router.push("/");
-      router.refresh();
+      router.replace("/");
     } catch (error) {
       console.error("Logout failed:", error);
     }

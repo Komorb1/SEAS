@@ -293,14 +293,27 @@ export default async function AlertDetailPage({
                         value={formatDateTime(notification.created_at)}
                       />
                       <MiniField
-                        label="Sent"
-                        value={formatDateTime(notification.sent_at)}
+                        label="Dispatch status"
+                        value={formatEnumLabel(String(notification.status))}
                       />
                       <MiniField
-                        label="Delivered"
-                        value={formatDateTime(notification.delivered_at)}
+                        label="Dispatched at"
+                        value={formatDateTime(notification.sent_at)}
                       />
                     </div>
+
+                    {notification.channel === "web_push" ? (
+                      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-100 px-3 py-2 text-xs text-slate-600 dark:border-slate-800 dark:bg-slate-950 dark:text-slate-400">
+                        Delivery confirmation is not available for web push notifications.
+                      </div>
+                    ) : (
+                      <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                        <MiniField
+                          label="Delivered"
+                          value={formatDateTime(notification.delivered_at)}
+                        />
+                      </div>
+                    )}
 
                     {notification.error_message ? (
                       <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300">

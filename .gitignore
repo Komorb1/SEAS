@@ -7,6 +7,7 @@ node_modules/
 
 # local config files
 firmware/config.json
+firmware/device_secret.txt
 
 # Next.js
 .next/
