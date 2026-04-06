@@ -1,6 +1,6 @@
 {
   "id": "/",
-  "name": "SEAS Smart Emergency Alert System",
+  "name": "Smart Emergency Alert System",
   "short_name": "SEAS",
   "description": "Smart environmental monitoring and emergency alerts for smoke, gas, flame, motion, and device events.",
   "start_url": "/dashboard",
