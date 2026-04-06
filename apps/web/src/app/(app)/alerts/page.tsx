@@ -10,7 +10,6 @@ import { prisma } from "@/lib/prisma";
 import { requireCurrentUserId } from "@/lib/auth";
 import { PageEmptyState } from "@/components/ui/page-states";
 import type { EventType, Severity } from "@prisma/client";
-import { AlertsAutoRefresh } from "@/components/alerts/alerts-auto-refresh";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -192,16 +191,8 @@ export default async function AlertsPage() {
     (alert) => alert.severity === "critical"
   ).length;
 
-  const alertsSummary = JSON.stringify({
-    latestEventId: alerts[0]?.event_id ?? null,
-    latestStatus: alerts[0]?.status ?? null,
-    latestStartedAt: alerts[0]?.started_at?.toISOString() ?? null,
-    openCount: openAlerts.length,
-  });
-
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-6">
-      <AlertsAutoRefresh initialSnapshot={alertsSummary} />      
+    <div className="mx-auto w-full max-w-7xl space-y-6">    
       <section className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-3xl">

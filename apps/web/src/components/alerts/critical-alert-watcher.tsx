@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { ShieldAlert, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { usePathname } from "next/navigation";
 
 type LatestCriticalAlert = {
   event_id: string;
@@ -27,9 +26,6 @@ function formatEnumLabel(value: string): string {
 }
 
 export function CriticalAlertWatcher() {
-  const pathname = usePathname();
-  const isAlertsRoute =
-    pathname === "/alerts" || pathname.startsWith("/alerts/");
 
   const [alert, setAlert] = useState<LatestCriticalAlert | null>(null);
   const [dismissedAlertId, setDismissedAlertId] = useState<string | null>(null);
@@ -38,9 +34,7 @@ export function CriticalAlertWatcher() {
   const initializedRef = useRef(false);
 
   useEffect(() => {
-    if (isAlertsRoute) {
-      return;
-    }
+
 
     let cancelled = false;
 
@@ -106,9 +100,9 @@ export function CriticalAlertWatcher() {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [dismissedAlertId, isAlertsRoute]);
+  }, [dismissedAlertId]);
 
-  if (!alert || isAlertsRoute) return null;
+  if (!alert) return null;
 
   return (
     <div className="fixed inset-x-4 top-4 z-[100] mx-auto w-full max-w-xl rounded-2xl border border-red-300 bg-red-50 p-4 shadow-lg dark:border-red-900/50 dark:bg-red-950/90">
