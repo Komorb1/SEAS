@@ -58,7 +58,14 @@ describe("AlertsPage authorization", () => {
           },
         },
       },
-      include: {
+      select: {
+        event_id: true,
+        title: true,
+        event_type: true,
+        severity: true,
+        status: true,
+        description: true,
+        started_at: true,
         site: {
           select: {
             name: true,
@@ -73,6 +80,7 @@ describe("AlertsPage authorization", () => {
       orderBy: {
         started_at: "desc",
       },
+      take: 30,
     });
   });
 
