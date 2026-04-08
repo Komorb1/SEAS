@@ -105,7 +105,7 @@ export function CriticalAlertWatcher() {
   if (!alert) return null;
 
   return (
-    <div className="fixed inset-x-4 top-4 z-[100] mx-auto w-full max-w-xl rounded-2xl border border-red-300 bg-red-50 p-4 shadow-lg dark:border-red-900/50 dark:bg-red-950/90">
+    <div className="fixed inset-x-4 top-4 z-100 mx-auto w-full max-w-xl rounded-2xl border border-red-300 bg-red-50 p-4 shadow-lg dark:border-red-900/50 dark:bg-red-950/90">
       <div className="flex items-start gap-3">
         <div className="rounded-full bg-red-100 p-2 text-red-700 dark:bg-red-900/60 dark:text-red-300">
           <ShieldAlert className="h-5 w-5" />

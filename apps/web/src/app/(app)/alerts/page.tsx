@@ -11,9 +11,6 @@ import { requireCurrentUserId } from "@/lib/auth";
 import { PageEmptyState } from "@/components/ui/page-states";
 import type { EventType, Severity } from "@prisma/client";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-
 type UiAlertSeverity = "online" | "warning" | "critical";
 
 function formatEventType(eventType: string): string {
@@ -154,29 +151,37 @@ export default async function AlertsPage() {
   try {
     alerts = await prisma.emergencyEvent.findMany({
       where: {
-        site: {
-          site_users: {
-            some: {
-              user_id: userId,
+          site: {
+            site_users: {
+              some: {
+                user_id: userId,
+              },
             },
           },
         },
-      },
-      include: {
-        site: {
-          select: {
-            name: true,
+        select: {
+          event_id: true,
+          title: true,
+          event_type: true,
+          severity: true,
+          status: true,
+          description: true,
+          started_at: true,
+          site: {
+            select: {
+              name: true,
+            },
+          },
+          device: {
+            select: {
+              serial_number: true,
+            },
           },
         },
-        device: {
-          select: {
-            serial_number: true,
-          },
+        orderBy: {
+          started_at: "desc",
         },
-      },
-      orderBy: {
-        started_at: "desc",
-      },
+        take: 30,
     });
   } catch (error) {
     hasLiveDataError = true;

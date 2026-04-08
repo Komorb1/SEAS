@@ -10,7 +10,7 @@ export async function GET(req: Request) {
     const latestCriticalAlert = await prisma.emergencyEvent.findFirst({
       where: {
         severity: "critical",
-        status: { in: ["new", "acknowledged"] },
+        status: "new",
         site: {
           site_users: {
             some: {

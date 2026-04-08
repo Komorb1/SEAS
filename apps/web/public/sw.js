@@ -1,5 +1,4 @@
-const STATIC_CACHE = "seas-static-v12";
-const PAGE_CACHE = "seas-pages-v12";
+const STATIC_CACHE = "seas-static-v13";
 const OFFLINE_URL = "/offline.html";
 
 const STATIC_ASSETS = [
@@ -18,26 +17,6 @@ const STATIC_ASSETS = [
   "/icons/icon-512x512.png",
 ];
 
-const NON_CACHEABLE_PAGE_PREFIXES = [
-  "/dashboard",
-  "/alerts",
-  "/devices",
-  "/sites",
-  "/profile",
-  "/audit-logs",
-  "/readings",
-];
-
-const NON_CACHEABLE_API_PREFIXES = [
-  "/api/auth",
-  "/api/alerts",
-  "/api/profile",
-  "/api/readings",
-  "/api/devices",
-  "/api/sites",
-  "/api/push",
-];
-
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(STATIC_CACHE).then((cache) => cache.addAll(STATIC_ASSETS))
@@ -50,9 +29,7 @@ self.addEventListener("activate", (event) => {
     (async () => {
       const keys = await caches.keys();
       await Promise.all(
-        keys
-          .filter((key) => key !== STATIC_CACHE && key !== PAGE_CACHE)
-          .map((key) => caches.delete(key))
+        keys.filter((key) => key !== STATIC_CACHE).map((key) => caches.delete(key))
       );
       await self.clients.claim();
     })()
@@ -68,56 +45,56 @@ self.addEventListener("fetch", (event) => {
 
   if (url.origin !== self.location.origin) return;
 
-  // Never cache auth-sensitive API routes
+  // Never interfere with Next.js internals or app/API data
   if (
-    url.pathname.startsWith("/api/") &&
-    NON_CACHEABLE_API_PREFIXES.some((path) => url.pathname.startsWith(path))
+    url.pathname.startsWith("/_next/") ||
+    url.pathname.startsWith("/api/") ||
+    url.pathname.startsWith("/dashboard") ||
+    url.pathname.startsWith("/alerts") ||
+    url.pathname.startsWith("/devices") ||
+    url.pathname.startsWith("/sites") ||
+    url.pathname.startsWith("/profile") ||
+    url.pathname.startsWith("/audit-logs") ||
+    url.pathname.startsWith("/readings")
   ) {
-    event.respondWith(fetch(request));
     return;
   }
 
-  // Do not cache authenticated/protected app pages
+  // Cache-first only for static PWA assets
   if (
-    request.mode === "navigate" &&
-    NON_CACHEABLE_PAGE_PREFIXES.some((path) => url.pathname.startsWith(path))
+    url.pathname === "/manifest.webmanifest" ||
+    url.pathname === "/icon.ico" ||
+    url.pathname.startsWith("/icons/")
   ) {
-    event.respondWith(fetch(request));
+    event.respondWith(
+      (async () => {
+        const cached = await caches.match(request);
+        if (cached) return cached;
+
+        const response = await fetch(request);
+        if (response.ok) {
+          const cache = await caches.open(STATIC_CACHE);
+          await cache.put(request, response.clone());
+        }
+        return response;
+      })()
+    );
     return;
   }
 
-  // Page navigations for cacheable pages
+  // For normal page navigations outside protected app pages:
+  // network first, offline fallback only
   if (request.mode === "navigate") {
     event.respondWith(
       (async () => {
         try {
-          const response = await fetch(request);
-
-          if (response.ok) {
-            const cache = await caches.open(PAGE_CACHE);
-            await cache.put(request.url, response.clone());
-          }
-
-          return response;
+          return await fetch(request);
         } catch {
-          const pageCache = await caches.open(PAGE_CACHE);
-
-          const cachedPage =
-            (await pageCache.match(request.url)) ||
-            (await pageCache.match(request)) ||
-            (await pageCache.match(url.pathname));
-
-          if (cachedPage) return cachedPage;
-
-          const staticCache = await caches.open(STATIC_CACHE);
-          const offlinePage =
-            (await staticCache.match(OFFLINE_URL)) ||
-            (await caches.match(OFFLINE_URL));
-
-          if (offlinePage) return offlinePage;
+          const cachedOffline = await caches.match(OFFLINE_URL);
+          if (cachedOffline) return cachedOffline;
 
           return new Response(
-            "<!doctype html><html><body><h1>Offline</h1><p>No cached page is available yet.</p></body></html>",
+            "<!doctype html><html><body><h1>Offline</h1><p>You appear to be offline.</p></body></html>",
             {
               status: 200,
               headers: { "Content-Type": "text/html; charset=utf-8" },
@@ -126,72 +103,7 @@ self.addEventListener("fetch", (event) => {
         }
       })()
     );
-    return;
   }
-
-  // Static assets
-  if (
-    url.pathname.startsWith("/icons/") ||
-    url.pathname === "/manifest.webmanifest" ||
-    url.pathname === "/icon.ico"
-  ) {
-    event.respondWith(
-      (async () => {
-        const cached = await caches.match(request);
-        if (cached) return cached;
-
-        try {
-          const response = await fetch(request);
-          if (response.ok) {
-            const cache = await caches.open(STATIC_CACHE);
-            await cache.put(request, response.clone());
-          }
-          return response;
-        } catch {
-          return new Response("", { status: 404 });
-        }
-      })()
-    );
-    return;
-  }
-
-  // Other API GET requests: network only
-  if (url.pathname.startsWith("/api/")) {
-    event.respondWith(
-      fetch(request).catch(() =>
-        new Response(
-          JSON.stringify({
-            error: "offline",
-            message: "Live data is unavailable while offline.",
-          }),
-          {
-            status: 503,
-            headers: { "Content-Type": "application/json" },
-          }
-        )
-      )
-    );
-    return;
-  }
-
-  // Other same-origin GETs
-  event.respondWith(
-    (async () => {
-      const cached = await caches.match(request);
-      if (cached) return cached;
-
-      try {
-        const response = await fetch(request);
-        if (response.ok) {
-          const cache = await caches.open(STATIC_CACHE);
-          await cache.put(request, response.clone());
-        }
-        return response;
-      } catch {
-        return new Response("", { status: 404 });
-      }
-    })()
-  );
 });
 
 self.addEventListener("push", (event) => {
