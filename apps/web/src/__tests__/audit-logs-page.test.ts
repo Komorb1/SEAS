@@ -7,6 +7,7 @@ jest.mock("@/lib/prisma", () => ({
   prisma: {
     auditLog: {
       findMany: jest.fn(),
+      count: jest.fn(),
     },
   },
 }));
@@ -22,6 +23,7 @@ jest.mock("next/navigation", () => ({
 const mockRequireCurrentUserId = requireCurrentUserId as jest.Mock;
 const mockRedirect = redirect as jest.MockedFunction<typeof redirect>;
 const mockAuditLogFindMany = prisma.auditLog.findMany as jest.Mock;
+const mockAuditLogCount = prisma.auditLog.count as jest.Mock;
 
 describe("AuditLogsPage authorization", () => {
   beforeEach(() => {
@@ -38,10 +40,12 @@ describe("AuditLogsPage authorization", () => {
 
     expect(mockRedirect).toHaveBeenCalledWith("/login");
     expect(mockAuditLogFindMany).not.toHaveBeenCalled();
+    expect(mockAuditLogCount).not.toHaveBeenCalled();
   });
 
   test("loads only logs for the current user", async () => {
     mockRequireCurrentUserId.mockResolvedValue("user-1");
+    mockAuditLogCount.mockResolvedValue(1);
     mockAuditLogFindMany.mockResolvedValue([
       {
         log_id: "log-1",
@@ -63,6 +67,8 @@ describe("AuditLogsPage authorization", () => {
       orderBy: {
         created_at: "desc",
       },
+      skip: 0,
+      take: 10,
       select: {
         log_id: true,
         action_type: true,

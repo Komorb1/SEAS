@@ -146,7 +146,7 @@ function formatDetails(details: unknown, actionType: string): string {
 
 export default async function AuditLogsPage({
   searchParams,
-}: AuditLogsPageProps) {
+}: AuditLogsPageProps = {}) {
   let userId: string;
 
   try {
@@ -241,7 +241,7 @@ export default async function AuditLogsPage({
       ) : (
         <>
           <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
-            Showing {startItem} to {endItem} of {totalLogs} activity records
+            Showing {startItem} ~ {endItem} of {totalLogs} activity records
           </div>
 
           <div className="space-y-4 md:hidden">
@@ -364,7 +364,7 @@ export default async function AuditLogsPage({
               Page {safePage} of {totalPages}
             </p>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Link
                 href={previousPageHref}
                 aria-disabled={safePage === 1}
@@ -377,6 +377,30 @@ export default async function AuditLogsPage({
               >
                 Previous
               </Link>
+
+              <form method="GET" className="flex flex-wrap items-center gap-2">
+                <label
+                  htmlFor="page-jump-audit-logs"
+                  className="text-sm text-slate-500 dark:text-slate-400"
+                >
+                  Go to
+                </label>
+                <input
+                  id="page-jump-audit-logs"
+                  name="page"
+                  type="number"
+                  min={1}
+                  max={totalPages}
+                  defaultValue={safePage}
+                  className="h-9 w-20 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-red-400 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                />
+                <button
+                  type="submit"
+                  className="inline-flex h-9 items-center justify-center rounded-lg bg-red-600 px-4 text-sm font-medium text-white transition hover:bg-red-700"
+                >
+                  Go
+                </button>
+              </form>
 
               <Link
                 href={nextPageHref}

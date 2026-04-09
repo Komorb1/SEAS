@@ -164,7 +164,7 @@ function getAlertCardStyles(
 
 export default async function AlertsPage({
   searchParams,
-}: AlertsPageProps) {
+}: AlertsPageProps = {}) {
   const userId = await requireCurrentUserId();
   const params = (await searchParams) ?? {};
   const currentPage = parsePage(params.page);

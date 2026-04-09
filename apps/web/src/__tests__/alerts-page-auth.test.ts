@@ -6,6 +6,7 @@ jest.mock("@/lib/prisma", () => ({
   prisma: {
     emergencyEvent: {
       findMany: jest.fn(),
+      count: jest.fn(),
     },
   },
 }));
@@ -16,6 +17,7 @@ jest.mock("@/lib/auth", () => ({
 
 const mockRequireCurrentUserId = requireCurrentUserId as jest.Mock;
 const mockEmergencyEventFindMany = prisma.emergencyEvent.findMany as jest.Mock;
+const mockEmergencyEventCount = prisma.emergencyEvent.count as jest.Mock;
 
 describe("AlertsPage authorization", () => {
   beforeEach(() => {
@@ -27,10 +29,17 @@ describe("AlertsPage authorization", () => {
 
     await expect(AlertsPage()).rejects.toThrow("unauthorized");
     expect(mockEmergencyEventFindMany).not.toHaveBeenCalled();
+    expect(mockEmergencyEventCount).not.toHaveBeenCalled();
   });
 
   test("queries only alerts for sites the current user belongs to", async () => {
     mockRequireCurrentUserId.mockResolvedValue("user-1");
+
+    mockEmergencyEventCount
+      .mockResolvedValueOnce(1) // total alerts
+      .mockResolvedValueOnce(1) // open alerts
+      .mockResolvedValueOnce(1); // critical alerts
+
     mockEmergencyEventFindMany.mockResolvedValue([
       {
         event_id: "event-1",
@@ -48,6 +57,7 @@ describe("AlertsPage authorization", () => {
     const page = await AlertsPage();
 
     expect(page).toBeTruthy();
+
     expect(mockEmergencyEventFindMany).toHaveBeenCalledWith({
       where: {
         site: {
@@ -80,7 +90,8 @@ describe("AlertsPage authorization", () => {
       orderBy: {
         started_at: "desc",
       },
-      take: 30,
+      skip: 0,
+      take: 10,
     });
   });
 
@@ -90,6 +101,12 @@ describe("AlertsPage authorization", () => {
       .mockImplementation(() => {});
 
     mockRequireCurrentUserId.mockResolvedValue("user-1");
+
+    mockEmergencyEventCount
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(1);
+
     mockEmergencyEventFindMany.mockRejectedValue(new Error("db failed"));
 
     const page = await AlertsPage();
