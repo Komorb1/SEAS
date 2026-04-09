@@ -1,8 +1,18 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentUserId } from "@/lib/auth";
 import { PageEmptyState } from "@/components/ui/page-states";
+
 export const dynamic = "force-dynamic";
+
+type AuditLogsPageProps = {
+  searchParams?: Promise<{
+    page?: string;
+  }>;
+};
+
+const PAGE_SIZE = 10;
 
 function formatTimestamp(date: Date): string {
   return new Intl.DateTimeFormat("en-GB", {
@@ -10,6 +20,22 @@ function formatTimestamp(date: Date): string {
     timeStyle: "short",
     timeZone: "Europe/Istanbul",
   }).format(date);
+}
+
+function parsePage(value?: string): number {
+  const page = Number(value);
+
+  if (!Number.isFinite(page) || page < 1) {
+    return 1;
+  }
+
+  return Math.floor(page);
+}
+
+function buildAuditLogsPageHref(page: number): string {
+  const search = new URLSearchParams();
+  search.set("page", String(page));
+  return `/audit-logs?${search.toString()}`;
 }
 
 function formatTargetType(value: string): string {
@@ -118,7 +144,9 @@ function formatDetails(details: unknown, actionType: string): string {
     .join(", ");
 }
 
-export default async function AuditLogsPage() {
+export default async function AuditLogsPage({
+  searchParams,
+}: AuditLogsPageProps) {
   let userId: string;
 
   try {
@@ -127,13 +155,28 @@ export default async function AuditLogsPage() {
     redirect("/login");
   }
 
+  const params = (await searchParams) ?? {};
+  const currentPage = parsePage(params.page);
+
+  const where = {
+    user_id: userId,
+  } as const;
+
+  const totalLogs = await prisma.auditLog.count({
+    where,
+  });
+
+  const totalPages = Math.max(1, Math.ceil(totalLogs / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const skip = (safePage - 1) * PAGE_SIZE;
+
   const logs = await prisma.auditLog.findMany({
-    where: {
-      user_id: userId,
-    },
+    where,
     orderBy: {
       created_at: "desc",
     },
+    skip,
+    take: PAGE_SIZE,
     select: {
       log_id: true,
       action_type: true,
@@ -145,6 +188,11 @@ export default async function AuditLogsPage() {
   });
 
   const latestLog = logs[0];
+  const startItem = totalLogs === 0 ? 0 : skip + 1;
+  const endItem = Math.min(skip + PAGE_SIZE, totalLogs);
+
+  const previousPageHref = buildAuditLogsPageHref(Math.max(1, safePage - 1));
+  const nextPageHref = buildAuditLogsPageHref(Math.min(totalPages, safePage + 1));
 
   return (
     <div className="space-y-6 pb-24 md:pb-6">
@@ -157,14 +205,14 @@ export default async function AuditLogsPage() {
         </p>
       </div>
 
-      {logs.length > 0 ? (
+      {totalLogs > 0 ? (
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
               Total activity
             </p>
             <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
-              {logs.length}
+              {totalLogs}
             </p>
           </div>
 
@@ -192,6 +240,10 @@ export default async function AuditLogsPage() {
         </section>
       ) : (
         <>
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+            Showing {startItem} to {endItem} of {totalLogs} activity records
+          </div>
+
           <div className="space-y-4 md:hidden">
             {logs.map((log) => (
               <div
@@ -305,6 +357,40 @@ export default async function AuditLogsPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Page {safePage} of {totalPages}
+            </p>
+
+            <div className="flex items-center gap-2">
+              <Link
+                href={previousPageHref}
+                aria-disabled={safePage === 1}
+                className={[
+                  "inline-flex h-9 items-center justify-center rounded-lg border px-4 text-sm font-medium transition",
+                  safePage === 1
+                    ? "pointer-events-none border-slate-200 text-slate-400 dark:border-slate-800 dark:text-slate-600"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800",
+                ].join(" ")}
+              >
+                Previous
+              </Link>
+
+              <Link
+                href={nextPageHref}
+                aria-disabled={safePage === totalPages}
+                className={[
+                  "inline-flex h-9 items-center justify-center rounded-lg border px-4 text-sm font-medium transition",
+                  safePage === totalPages
+                    ? "pointer-events-none border-slate-200 text-slate-400 dark:border-slate-800 dark:text-slate-600"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800",
+                ].join(" ")}
+              >
+                Next
+              </Link>
+            </div>
           </div>
         </>
       )}

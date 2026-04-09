@@ -1,33 +1,20 @@
-import {
-  Activity,
-  Clock3,
-  Cpu,
-  Radio,
-  Search,
-} from "lucide-react";
-import { PageEmptyState } from "@/components/ui/page-states";
+import Link from "next/link";
+import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireCurrentUserId } from "@/lib/auth";
-import { RefreshReadingsButton } from "@/components/readings/refresh-readings-button";
+import { PageEmptyState } from "@/components/ui/page-states";
 
-type ReadingsPageProps = {
+export const dynamic = "force-dynamic";
+
+type AuditLogsPageProps = {
   searchParams?: Promise<{
-    siteId?: string;
-    deviceId?: string;
-    sensorType?: string;
+    page?: string;
   }>;
 };
 
-function formatEnumLabel(value: string): string {
-  return value
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
-}
+const PAGE_SIZE = 10;
 
-function formatDateTime(date: Date | null): string {
-  if (!date) return "N/A";
-
+function formatTimestamp(date: Date): string {
   return new Intl.DateTimeFormat("en-GB", {
     dateStyle: "medium",
     timeStyle: "short",
@@ -35,382 +22,402 @@ function formatDateTime(date: Date | null): string {
   }).format(date);
 }
 
-function formatReadingValue(value: unknown): string {
-  if (value == null) return "N/A";
-  return String(value);
+function parsePage(value?: string): number {
+  const page = Number(value);
+
+  if (!Number.isFinite(page) || page < 1) {
+    return 1;
+  }
+
+  return Math.floor(page);
 }
 
-export default async function ReadingsPage({
+function buildAuditLogsPageHref(page: number): string {
+  const search = new URLSearchParams();
+  search.set("page", String(page));
+  return `/audit-logs?${search.toString()}`;
+}
+
+function formatTargetType(value: string): string {
+  switch (value) {
+    case "user":
+      return "User Account";
+    case "site":
+      return "Site";
+    case "device":
+      return "Device";
+    case "sensor":
+      return "Sensor";
+    case "event":
+      return "Emergency Event";
+    case "alert":
+      return "Alert";
+    case "profile":
+      return "Profile";
+    case "settings":
+      return "Settings";
+    default:
+      return value
+        .replaceAll("_", " ")
+        .replace(/\b\w/g, (char) => char.toUpperCase());
+  }
+}
+
+function shortenId(value: string): string {
+  if (value.length <= 16) return value;
+  return `${value.slice(0, 8)}...${value.slice(-4)}`;
+}
+
+function formatActionLabel(action: string): string {
+  switch (action) {
+    case "login":
+      return "Login";
+    case "logout":
+      return "Logout";
+    case "update_settings":
+      return "Settings Updated";
+    case "create":
+      return "Created";
+    case "update":
+      return "Updated";
+    case "delete":
+      return "Deleted";
+    default:
+      return action
+        .replaceAll("_", " ")
+        .replace(/\b\w/g, (char) => char.toUpperCase());
+  }
+}
+
+function getActionBadgeClass(action: string): string {
+  switch (action) {
+    case "login":
+      return "bg-blue-50 text-blue-700 ring-blue-200 dark:bg-blue-500/10 dark:text-blue-300 dark:ring-blue-500/20";
+    case "logout":
+      return "bg-slate-100 text-slate-700 ring-slate-200 dark:bg-slate-500/10 dark:text-slate-300 dark:ring-slate-500/20";
+    case "update_settings":
+      return "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20";
+    case "create":
+      return "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20";
+    case "delete":
+      return "bg-rose-50 text-rose-700 ring-rose-200 dark:bg-rose-500/10 dark:text-rose-300 dark:ring-rose-500/20";
+    default:
+      return "bg-slate-100 text-slate-700 ring-slate-200 dark:bg-slate-500/10 dark:text-slate-300 dark:ring-slate-500/20";
+  }
+}
+
+function formatDetails(details: unknown, actionType: string): string {
+  if (!details) return "No additional details";
+
+  if (typeof details === "string") {
+    return details;
+  }
+
+  if (typeof details !== "object" || Array.isArray(details)) {
+    return "No additional details";
+  }
+
+  const data = details as Record<string, unknown>;
+
+  if (actionType === "login" && data.login_identifier_type) {
+    return `Signed in with ${String(data.login_identifier_type)}`;
+  }
+
+  if (actionType === "logout") {
+    return "Signed Out";
+  }
+
+  if (actionType === "update_settings" && data.kind === "password_changed") {
+    return "Password changed";
+  }
+
+  const entries = Object.entries(data);
+  if (entries.length === 0) {
+    return "No additional details";
+  }
+
+  return entries
+    .map(([key, value]) => {
+      const label = key.replaceAll("_", " ");
+      return `${label}: ${String(value)}`;
+    })
+    .join(", ");
+}
+
+export default async function AuditLogsPage({
   searchParams,
-}: ReadingsPageProps) {
-  const userId = await requireCurrentUserId();
+}: AuditLogsPageProps) {
+  let userId: string;
+
+  try {
+    userId = await requireCurrentUserId();
+  } catch {
+    redirect("/login");
+  }
+
   const params = (await searchParams) ?? {};
+  const currentPage = parsePage(params.page);
 
-  const selectedSiteId = params.siteId?.trim() || "";
-  const selectedDeviceId = params.deviceId?.trim() || "";
-  const selectedSensorType = params.sensorType?.trim() || "";
+  const where = {
+    user_id: userId,
+  } as const;
 
-  const pageRenderedAt = new Date();
+  const totalLogs = await prisma.auditLog.count({
+    where,
+  });
 
-  const authorizedSites = await prisma.site.findMany({
-    where: {
-      site_users: {
-        some: {
-          user_id: userId,
-        },
-      },
-    },
-    select: {
-      site_id: true,
-      name: true,
-    },
+  const totalPages = Math.max(1, Math.ceil(totalLogs / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const skip = (safePage - 1) * PAGE_SIZE;
+
+  const logs = await prisma.auditLog.findMany({
+    where,
     orderBy: {
-      name: "asc",
+      created_at: "desc",
     },
-  });
-
-  const authorizedSiteIds = authorizedSites.map((site) => site.site_id);
-
-  const devices = await prisma.device.findMany({
-    where: {
-      site_id: {
-        in: authorizedSiteIds,
-      },
-      ...(selectedSiteId ? { site_id: selectedSiteId } : {}),
-    },
+    skip,
+    take: PAGE_SIZE,
     select: {
-      device_id: true,
-      serial_number: true,
-      site_id: true,
-      site: {
-        select: {
-          name: true,
-        },
-      },
-    },
-    orderBy: [
-      {
-        site: {
-          name: "asc",
-        },
-      },
-      {
-        serial_number: "asc",
-      },
-    ],
-  });
-
-  const sensorTypeOptions = [
-    "gas",
-    "smoke",
-    "flame",
-    "motion",
-    "door",
-  ] as const;
-
-  const readings = await prisma.sensorReading.findMany({
-    where: {
-      sensor: {
-        ...(selectedSensorType
-          ? {
-              sensor_type: selectedSensorType as
-                | "gas"
-                | "smoke"
-                | "flame"
-                | "motion"
-                | "door",
-            }
-          : {}),
-        ...(selectedDeviceId
-          ? {
-              device_id: selectedDeviceId,
-            }
-          : {}),
-        device: {
-          ...(selectedSiteId
-            ? {
-                site_id: selectedSiteId,
-              }
-            : {}),
-          site: {
-            site_users: {
-              some: {
-                user_id: userId,
-              },
-            },
-          },
-        },
-      },
-    },
-    orderBy: {
-      received_at: "desc",
-    },
-    take: 100,
-    select: {
-      reading_id: true,
-      value: true,
-      unit: true,
-      recorded_at: true,
-      received_at: true,
-      quality_flag: true,
-      sensor: {
-        select: {
-          sensor_id: true,
-          sensor_type: true,
-          location_label: true,
-          device: {
-            select: {
-              device_id: true,
-              serial_number: true,
-              site: {
-                select: {
-                  site_id: true,
-                  name: true,
-                },
-              },
-            },
-          },
-        },
-      },
+      log_id: true,
+      action_type: true,
+      target_type: true,
+      target_id: true,
+      details: true,
+      created_at: true,
     },
   });
 
-  const hasActiveFilters =
-    Boolean(selectedSiteId) ||
-    Boolean(selectedDeviceId) ||
-    Boolean(selectedSensorType);
+  const latestLog = logs[0];
+  const startItem = totalLogs === 0 ? 0 : skip + 1;
+  const endItem = Math.min(skip + PAGE_SIZE, totalLogs);
+
+  const previousPageHref = buildAuditLogsPageHref(Math.max(1, safePage - 1));
+  const nextPageHref = buildAuditLogsPageHref(Math.min(totalPages, safePage + 1));
 
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-6">
-      <section className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h2 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
-            Sensor Readings
-          </h2>
-          <p className="mt-1 max-w-2xl text-sm text-slate-600 dark:text-slate-400 sm:text-base">
-            Review recent readings from devices in your authorized sites.
-          </p>
-        </div>
+    <div className="space-y-6 pb-24 md:pb-6">
+      <div className="space-y-2">
+        <h1 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white">
+          Audit Logs
+        </h1>
+        <p className="text-sm text-slate-600 dark:text-slate-400">
+          Review your recent account and system activity.
+        </p>
+      </div>
 
-        <div className="inline-flex w-fit items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
-          Total readings:
-          <span className="ml-2 font-semibold text-slate-900 dark:text-white">
-            {readings.length}
-          </span>
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <form
-          method="GET"
-          className="flex flex-col gap-3 xl:flex-row xl:items-center xl:gap-4"
-        >
-          <div className="flex shrink-0 items-center gap-2 xl:min-w-fit">
-            <Search className="h-4 w-4 text-slate-400 dark:text-slate-500" />
-            <span className="text-sm font-medium text-slate-700 dark:text-slate-300">
-              Filters
-            </span>
-          </div>
-
-          <div className="grid flex-1 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-            <select
-              id="siteId"
-              name="siteId"
-              defaultValue={selectedSiteId}
-              className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-red-400 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-            >
-              <option value="">All sites</option>
-              {authorizedSites.map((site) => (
-                <option key={site.site_id} value={site.site_id}>
-                  {site.name}
-                </option>
-              ))}
-            </select>
-
-            <select
-              id="deviceId"
-              name="deviceId"
-              defaultValue={selectedDeviceId}
-              className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-red-400 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-            >
-              <option value="">All devices</option>
-              {devices.map((device) => (
-                <option key={device.device_id} value={device.device_id}>
-                  {device.serial_number} ({device.site.name})
-                </option>
-              ))}
-            </select>
-
-            <select
-              id="sensorType"
-              name="sensorType"
-              defaultValue={selectedSensorType}
-              className="h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-red-400 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
-            >
-              <option value="">All sensor types</option>
-              {sensorTypeOptions.map((sensorType) => (
-                <option key={sensorType} value={sensorType}>
-                  {formatEnumLabel(sensorType)}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex shrink-0 gap-2">
-            <button
-              type="submit"
-              className="h-9 rounded-lg bg-red-600 px-4 text-sm font-medium text-white transition hover:bg-red-700"
-            >
-              Apply
-            </button>
-
-            <a
-              href="/readings"
-              className="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800"
-            >
-              Reset
-            </a>
-          </div>
-        </form>
-      </section>
-
-      <section className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
-        <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-4 dark:border-slate-800 sm:px-5">
-          <div>
-            <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
-              Recent Readings
-            </h3>
-            <p className="text-sm text-slate-500 dark:text-slate-400">
-              Sorted by newest first across all your accessible devices.
+      {totalLogs > 0 ? (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Total activity
+            </p>
+            <p className="mt-2 text-2xl font-semibold text-slate-900 dark:text-white">
+              {totalLogs}
             </p>
           </div>
 
-          <RefreshReadingsButton
-            lastUpdatedLabel={formatDateTime(pageRenderedAt)}
-          />
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              Latest activity
+            </p>
+            <p className="mt-2 text-sm font-medium text-slate-900 dark:text-white">
+              {latestLog ? formatActionLabel(latestLog.action_type) : "—"}
+            </p>
+            <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">
+              {latestLog ? formatTimestamp(latestLog.created_at) : "—"}
+            </p>
+          </div>
         </div>
+      ) : null}
 
-        {readings.length === 0 ? (
+      {logs.length === 0 ? (
+        <section className="rounded-2xl border border-dashed border-slate-300 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
           <PageEmptyState
-            title="No readings found"
-            description={
-              hasActiveFilters
-                ? "Try changing or clearing the current filters."
-                : "No sensor readings were found for your assigned sites."
-            }
+            title="No audit logs yet"
+            description="Your recent account activity will appear here once actions are recorded."
             className="py-12"
           />
-        ) : (
-          <>
-            <div className="md:hidden">
-              <div className="space-y-3 p-4">
-                {readings.map((reading) => (
-                  <article
-                    key={reading.reading_id}
-                    className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950/40"
+        </section>
+      ) : (
+        <>
+          <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+            Showing {startItem} to {endItem} of {totalLogs} activity records
+          </div>
+
+          <div className="space-y-4 md:hidden">
+            {logs.map((log) => (
+              <div
+                key={log.log_id}
+                className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <span
+                    className={[
+                      "inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset",
+                      getActionBadgeClass(log.action_type),
+                    ].join(" ")}
                   >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold text-slate-900 dark:text-white">
-                          {reading.sensor.device.serial_number}
-                        </p>
-                        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                          {reading.sensor.device.site.name}
-                        </p>
-                      </div>
+                    {formatActionLabel(log.action_type)}
+                  </span>
 
-                      <div className="shrink-0 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300">
-                        {formatEnumLabel(String(reading.quality_flag))}
-                      </div>
-                    </div>
+                  <span className="shrink-0 text-xs text-slate-500 dark:text-slate-400">
+                    {formatTimestamp(log.created_at)}
+                  </span>
+                </div>
 
-                    <div className="mt-4 space-y-3 text-sm">
-                      <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
-                        <Radio className="h-4 w-4 shrink-0" />
-                        <span className="truncate">
-                          {formatEnumLabel(String(reading.sensor.sensor_type))}
-                          {reading.sensor.location_label
-                            ? ` • ${reading.sensor.location_label}`
-                            : ""}
-                        </span>
-                      </div>
+                <div className="mt-4 space-y-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      Affected Item
+                    </p>
+                    <p className="mt-1 text-sm font-medium text-slate-900 dark:text-white">
+                      {formatTargetType(log.target_type)}
+                    </p>
+                    <p className="mt-1 font-mono text-xs text-slate-500 dark:text-slate-400">
+                      {log.target_id
+                        ? `ID: ${shortenId(log.target_id)}`
+                        : "No specific target ID"}
+                    </p>
+                  </div>
 
-                      <div className="flex items-center gap-2 text-slate-700 dark:text-slate-300">
-                        <Activity className="h-4 w-4 shrink-0" />
-                        <span>
-                          Value:{" "}
-                          <span className="font-medium">
-                            {formatReadingValue(reading.value)} {reading.unit ?? ""}
-                          </span>
-                        </span>
-                      </div>
-
-                      <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
-                        <Clock3 className="h-4 w-4 shrink-0" />
-                        <span>{formatDateTime(reading.received_at)}</span>
-                      </div>
-                    </div>
-                  </article>
-                ))}
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                      Details
+                    </p>
+                    <p className="mt-1 text-sm text-slate-700 dark:text-slate-300">
+                      {formatDetails(log.details, log.action_type)}
+                    </p>
+                  </div>
+                </div>
               </div>
-            </div>
+            ))}
+          </div>
 
-            <div className="hidden overflow-x-auto md:block">
-              <table className="min-w-full text-sm">
-                <thead className="bg-slate-100 text-left text-slate-600 dark:bg-slate-950/40 dark:text-slate-400">
-                  <tr>
-                    <th className="px-5 py-3 font-medium">Device</th>
-                    <th className="px-5 py-3 font-medium">Site</th>
-                    <th className="px-5 py-3 font-medium">Sensor Type</th>
-                    <th className="px-5 py-3 font-medium">Value</th>
-                    <th className="px-5 py-3 font-medium">Quality</th>
-                    <th className="px-5 py-3 font-medium">Timestamp</th>
-                  </tr>
-                </thead>
+          <div className="hidden overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 md:block">
+            <table className="min-w-full">
+              <thead className="border-b border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-950/40">
+                <tr>
+                  <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    Action
+                  </th>
+                  <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    Affected Item
+                  </th>
+                  <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    Details
+                  </th>
+                  <th className="px-5 py-4 text-left text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+                    Timestamp
+                  </th>
+                </tr>
+              </thead>
 
-                <tbody>
-                  {readings.map((reading) => (
-                    <tr
-                      key={reading.reading_id}
-                      className="border-t border-slate-200 dark:border-slate-800"
-                    >
-                      <td className="px-5 py-4 font-medium text-slate-900 dark:text-white">
-                        <div className="flex items-center gap-2">
-                          <Cpu className="h-4 w-4 text-slate-500" />
-                          <span>{reading.sensor.device.serial_number}</span>
+              <tbody>
+                {logs.map((log) => (
+                  <tr
+                    key={log.log_id}
+                    className="border-b border-slate-200 transition-colors hover:bg-slate-50/80 last:border-0 dark:border-slate-800 dark:hover:bg-slate-800/40"
+                  >
+                    <td className="whitespace-nowrap px-5 py-4">
+                      <span
+                        className={[
+                          "inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset",
+                          getActionBadgeClass(log.action_type),
+                        ].join(" ")}
+                      >
+                        {formatActionLabel(log.action_type)}
+                      </span>
+                    </td>
+
+                    <td className="px-5 py-4 text-sm">
+                      <div className="font-medium text-slate-900 dark:text-white">
+                        {formatTargetType(log.target_type)}
+                      </div>
+                      {log.target_id ? (
+                        <div className="mt-1 font-mono text-xs text-slate-500 dark:text-slate-400">
+                          ID: {shortenId(log.target_id)}
                         </div>
-                      </td>
+                      ) : (
+                        <div className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                          No specific target ID
+                        </div>
+                      )}
+                    </td>
 
-                      <td className="px-5 py-4 text-slate-700 dark:text-slate-300">
-                        {reading.sensor.device.site.name}
-                      </td>
+                    <td className="max-w-xl px-5 py-4 text-sm text-slate-700 dark:text-slate-300">
+                      <span className="wrap-break-word">
+                        {formatDetails(log.details, log.action_type)}
+                      </span>
+                    </td>
 
-                      <td className="px-5 py-4 text-slate-700 dark:text-slate-300">
-                        {formatEnumLabel(String(reading.sensor.sensor_type))}
-                        {reading.sensor.location_label
-                          ? ` • ${reading.sensor.location_label}`
-                          : ""}
-                      </td>
+                    <td className="whitespace-nowrap px-5 py-4 text-sm text-slate-700 dark:text-slate-300">
+                      {formatTimestamp(log.created_at)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-                      <td className="px-5 py-4 text-slate-700 dark:text-slate-300">
-                        {formatReadingValue(reading.value)} {reading.unit ?? ""}
-                      </td>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Page {safePage} of {totalPages}
+            </p>
 
-                      <td className="px-5 py-4 text-slate-700 dark:text-slate-300">
-                        {formatEnumLabel(String(reading.quality_flag))}
-                      </td>
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href={previousPageHref}
+                aria-disabled={safePage === 1}
+                className={[
+                  "inline-flex h-9 items-center justify-center rounded-lg border px-4 text-sm font-medium transition",
+                  safePage === 1
+                    ? "pointer-events-none border-slate-200 text-slate-400 dark:border-slate-800 dark:text-slate-600"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800",
+                ].join(" ")}
+              >
+                Previous
+              </Link>
 
-                      <td className="px-5 py-4 text-slate-500 dark:text-slate-400">
-                        {formatDateTime(reading.received_at)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <form method="GET" className="flex flex-wrap items-center gap-2">
+                <label
+                  htmlFor="page-jump-audit-logs"
+                  className="text-sm text-slate-500 dark:text-slate-400"
+                >
+                  Go to
+                </label>
+                <input
+                  id="page-jump-audit-logs"
+                  name="page"
+                  type="number"
+                  min={1}
+                  max={totalPages}
+                  defaultValue={safePage}
+                  className="h-9 w-20 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-red-400 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                />
+                <button
+                  type="submit"
+                  className="inline-flex h-9 items-center justify-center rounded-lg bg-red-600 px-4 text-sm font-medium text-white transition hover:bg-red-700"
+                >
+                  Go
+                </button>
+              </form>
+
+              <Link
+                href={nextPageHref}
+                aria-disabled={safePage === totalPages}
+                className={[
+                  "inline-flex h-9 items-center justify-center rounded-lg border px-4 text-sm font-medium transition",
+                  safePage === totalPages
+                    ? "pointer-events-none border-slate-200 text-slate-400 dark:border-slate-800 dark:text-slate-600"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800",
+                ].join(" ")}
+              >
+                Next
+              </Link>
             </div>
-          </>
-        )}
-      </section>
+          </div>
+        </>
+      )}
     </div>
   );
 }

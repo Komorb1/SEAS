@@ -13,6 +13,32 @@ import type { EventType, Severity } from "@prisma/client";
 
 type UiAlertSeverity = "online" | "warning" | "critical";
 
+type AlertsPageProps = {
+  searchParams?: Promise<{
+    page?: string;
+  }>;
+};
+
+type AlertStatus = "new" | "acknowledged" | "resolved" | "false_alarm";
+
+type AlertListItem = {
+  event_id: string;
+  title: string | null;
+  event_type: EventType;
+  severity: Severity;
+  status: AlertStatus;
+  description: string | null;
+  started_at: Date;
+  site: {
+    name: string;
+  };
+  device: {
+    serial_number: string;
+  } | null;
+};
+
+const PAGE_SIZE = 10;
+
 function formatEventType(eventType: string): string {
   return eventType
     .split("_")
@@ -20,14 +46,28 @@ function formatEventType(eventType: string): string {
     .join(" ");
 }
 
-
-
 function formatDateTime(date: Date): string {
   return new Intl.DateTimeFormat("en-GB", {
     dateStyle: "medium",
     timeStyle: "short",
     timeZone: "Europe/Istanbul",
   }).format(date);
+}
+
+function parsePage(value?: string): number {
+  const page = Number(value);
+
+  if (!Number.isFinite(page) || page < 1) {
+    return 1;
+  }
+
+  return Math.floor(page);
+}
+
+function buildAlertsPageHref(page: number): string {
+  const search = new URLSearchParams();
+  search.set("page", String(page));
+  return `/alerts?${search.toString()}`;
 }
 
 function AlertsOfflineNotice() {
@@ -38,8 +78,6 @@ function AlertsOfflineNotice() {
     </section>
   );
 }
-
-type AlertStatus = "new" | "acknowledged" | "resolved" | "false_alarm";
 
 function formatAlertStatus(status: AlertStatus): string {
   return status
@@ -124,41 +162,41 @@ function getAlertCardStyles(
   };
 }
 
-
-type AlertListItem = {
-  event_id: string;
-  title: string | null;
-  event_type: EventType;
-  severity: Severity;
-  status: "new" | "acknowledged" | "resolved" | "false_alarm";
-  description: string | null;
-  started_at: Date;
-  site: {
-    name: string;
-  };
-  device: {
-    serial_number: string;
-  } | null;
-};
-
-
-export default async function AlertsPage() {
+export default async function AlertsPage({
+  searchParams,
+}: AlertsPageProps) {
   const userId = await requireCurrentUserId();
+  const params = (await searchParams) ?? {};
+  const currentPage = parsePage(params.page);
 
   let alerts: AlertListItem[] = [];
+  let totalAlerts = 0;
+  let openAlertsCount = 0;
+  let criticalCount = 0;
   let hasLiveDataError = false;
 
-  try {
-    alerts = await prisma.emergencyEvent.findMany({
-      where: {
-          site: {
-            site_users: {
-              some: {
-                user_id: userId,
-              },
-            },
-          },
+  const where = {
+    site: {
+      site_users: {
+        some: {
+          user_id: userId,
         },
+      },
+    },
+  } as const;
+
+  try {
+    totalAlerts = await prisma.emergencyEvent.count({
+      where,
+    });
+
+    const totalPages = Math.max(1, Math.ceil(totalAlerts / PAGE_SIZE));
+    const safePage = Math.min(currentPage, totalPages);
+    const skip = (safePage - 1) * PAGE_SIZE;
+
+    const [pagedAlerts, openCount, criticalOpenCount] = await Promise.all([
+      prisma.emergencyEvent.findMany({
+        where,
         select: {
           event_id: true,
           title: true,
@@ -181,23 +219,46 @@ export default async function AlertsPage() {
         orderBy: {
           started_at: "desc",
         },
-        take: 30,
-    });
+        skip,
+        take: PAGE_SIZE,
+      }),
+      prisma.emergencyEvent.count({
+        where: {
+          ...where,
+          status: {
+            in: ["new", "acknowledged"],
+          },
+        },
+      }),
+      prisma.emergencyEvent.count({
+        where: {
+          ...where,
+          status: {
+            in: ["new", "acknowledged"],
+          },
+          severity: "critical",
+        },
+      }),
+    ]);
+
+    alerts = pagedAlerts;
+    openAlertsCount = openCount;
+    criticalCount = criticalOpenCount;
   } catch (error) {
     hasLiveDataError = true;
     console.error("Alerts data load failed:", error);
   }
 
-  const openAlerts = alerts.filter(
-    (alert) => alert.status === "new" || alert.status === "acknowledged"
-  );
+  const totalPages = Math.max(1, Math.ceil(totalAlerts / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const startItem = totalAlerts === 0 ? 0 : (safePage - 1) * PAGE_SIZE + 1;
+  const endItem = Math.min(safePage * PAGE_SIZE, totalAlerts);
 
-  const criticalCount = openAlerts.filter(
-    (alert) => alert.severity === "critical"
-  ).length;
+  const previousPageHref = buildAlertsPageHref(Math.max(1, safePage - 1));
+  const nextPageHref = buildAlertsPageHref(Math.min(totalPages, safePage + 1));
 
   return (
-    <div className="mx-auto w-full max-w-7xl space-y-6">    
+    <div className="mx-auto w-full max-w-7xl space-y-6">
       <section className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <h2 className="text-2xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-3xl">
@@ -212,7 +273,7 @@ export default async function AlertsPage() {
           <div className="inline-flex w-fit items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
             Open alerts:
             <span className="ml-2 font-semibold text-slate-900 dark:text-white">
-              {hasLiveDataError ? "—" : openAlerts.length}
+              {hasLiveDataError ? "—" : openAlertsCount}
             </span>
           </div>
 
@@ -240,114 +301,178 @@ export default async function AlertsPage() {
           />
         </section>
       ) : (
-        <section className="space-y-4">
-          {alerts.map((alert) => {
-            const cardStyles = getAlertCardStyles(alert.severity, alert.status);
+        <>
+          <section className="space-y-4">
+            <div className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-400">
+              Showing {startItem} ~ {endItem} of {totalAlerts} alerts
+            </div>
 
-            return (
-              <Link
-                key={alert.event_id}
-                href={`/alerts/${alert.event_id}`}
-                className="block"
-              >
-                <article
-                  className={[
-                    "rounded-2xl border border-slate-200 border-l-4 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 sm:p-5",
-                    cardStyles.accent,
-                  ].join(" ")}
+            {alerts.map((alert) => {
+              const cardStyles = getAlertCardStyles(alert.severity, alert.status);
+
+              return (
+                <Link
+                  key={alert.event_id}
+                  href={`/alerts/${alert.event_id}`}
+                  className="block"
                 >
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-start gap-3">
-                        <div className={["mt-0.5 rounded-xl p-2", cardStyles.icon].join(" ")}>
-                          {cardStyles.badge === "critical" ? (
-                            <TriangleAlert className="h-5 w-5" />
-                          ) : (
-                            <BellRing className="h-5 w-5" />
-                          )}
-                        </div>
-
-                        <div className="min-w-0">
-                          <p className="text-xs font-medium tracking-wide text-slate-500 dark:text-slate-500">
-                            {alert.event_id}
-                          </p>
-                          <h3
-                            className={[
-                              "mt-1 text-lg font-semibold",
-                              alert.status === "resolved" || alert.status === "false_alarm"
-                                ? "text-slate-600 dark:text-slate-300"
-                                : "text-slate-900 dark:text-white"
-                            ].join(" ")}
-                          >
-                            {alert.title?.trim() || formatEventType(alert.event_type)}
-                          </h3>
-                        </div>
-                      </div>
-
-                      <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
-                        <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
-                          <MapPinned className="h-4 w-4 shrink-0" />
-                          <span className="truncate">{alert.site.name}</span>
-                        </div>
-
-                        <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
-                          <Clock3 className="h-4 w-4 shrink-0" />
-                          <span>{formatDateTime(alert.started_at)}</span>
-                        </div>
-
-                        <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400 sm:col-span-2">
-                          <Router className="h-4 w-4 shrink-0" />
-                          <span className="truncate">
-                            Device: {alert.device?.serial_number ?? "N/A"}
-                          </span>
-                        </div>
-
-                        {alert.description ? (
-                          <div
-                            className={[
-                              "sm:col-span-2",
-                              alert.status === "resolved" || alert.status === "false_alarm"
-                                ? "text-slate-400 dark:text-slate-500"
-                                : "text-slate-500 dark:text-slate-400",
-                            ].join(" ")}
-                          >
-                            {alert.description}
+                  <article
+                    className={[
+                      "rounded-2xl border border-slate-200 border-l-4 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md dark:border-slate-800 dark:bg-slate-900 sm:p-5",
+                      cardStyles.accent,
+                    ].join(" ")}
+                  >
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start gap-3">
+                          <div className={["mt-0.5 rounded-xl p-2", cardStyles.icon].join(" ")}>
+                            {cardStyles.badge === "critical" ? (
+                              <TriangleAlert className="h-5 w-5" />
+                            ) : (
+                              <BellRing className="h-5 w-5" />
+                            )}
                           </div>
-                        ) : null}
+
+                          <div className="min-w-0">
+                            <p className="text-xs font-medium tracking-wide text-slate-500 dark:text-slate-500">
+                              {alert.event_id}
+                            </p>
+                            <h3
+                              className={[
+                                "mt-1 text-lg font-semibold",
+                                alert.status === "resolved" || alert.status === "false_alarm"
+                                  ? "text-slate-600 dark:text-slate-300"
+                                  : "text-slate-900 dark:text-white",
+                              ].join(" ")}
+                            >
+                              {alert.title?.trim() || formatEventType(alert.event_type)}
+                            </h3>
+                          </div>
+                        </div>
+
+                        <div className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
+                          <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
+                            <MapPinned className="h-4 w-4 shrink-0" />
+                            <span className="truncate">{alert.site.name}</span>
+                          </div>
+
+                          <div className="flex items-center gap-2 text-slate-500 dark:text-slate-400">
+                            <Clock3 className="h-4 w-4 shrink-0" />
+                            <span>{formatDateTime(alert.started_at)}</span>
+                          </div>
+
+                          <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400 sm:col-span-2">
+                            <Router className="h-4 w-4 shrink-0" />
+                            <span className="truncate">
+                              Device: {alert.device?.serial_number ?? "N/A"}
+                            </span>
+                          </div>
+
+                          {alert.description ? (
+                            <div
+                              className={[
+                                "sm:col-span-2",
+                                alert.status === "resolved" || alert.status === "false_alarm"
+                                  ? "text-slate-400 dark:text-slate-500"
+                                  : "text-slate-500 dark:text-slate-400",
+                              ].join(" ")}
+                            >
+                              {alert.description}
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+
+                      <div className="flex shrink-0 items-start gap-2 sm:justify-end">
+                        <span
+                          className={[
+                            "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium whitespace-nowrap",
+                            alert.status === "resolved" || alert.status === "false_alarm"
+                              ? "border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
+                              : cardStyles.badge === "critical"
+                                ? "border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-400"
+                                : cardStyles.badge === "warning"
+                                  ? "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                                  : "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
+                          ].join(" ")}
+                        >
+                          {formatSeverityLabel(alert.severity)}
+                        </span>
+
+                        <span
+                          className={[
+                            "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium whitespace-nowrap",
+                            getAlertStatusBadgeClasses(alert.status),
+                          ].join(" ")}
+                        >
+                          {formatAlertStatus(alert.status)}
+                        </span>
                       </div>
                     </div>
+                  </article>
+                </Link>
+              );
+            })}
+          </section>
 
-                    <div className="flex shrink-0 items-start gap-2 sm:justify-end">
-                      <span
-                        className={[
-                          "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium whitespace-nowrap",
-                          alert.status === "resolved" || alert.status === "false_alarm"
-                            ? "border-slate-300 bg-slate-100 text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300"
-                            : cardStyles.badge === "critical"
-                              ? "border-red-500/20 bg-red-500/10 text-red-700 dark:text-red-400"
-                              : cardStyles.badge === "warning"
-                                ? "border-amber-500/20 bg-amber-500/10 text-amber-700 dark:text-amber-400"
-                                : "border-emerald-500/20 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400",
-                        ].join(" ")}
-                      >
-                        {formatSeverityLabel(alert.severity)}
-                      </span>
+          <div className="flex flex-col gap-3 border-t border-slate-200 px-1 pt-2 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Page {safePage} of {totalPages}
+            </p>
 
-                      <span
-                        className={[
-                          "inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium whitespace-nowrap",
-                          getAlertStatusBadgeClasses(alert.status),
-                        ].join(" ")}
-                      >
-                        {formatAlertStatus(alert.status)}
-                      </span>
-                    </div>
-                  </div>
-                </article>
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href={previousPageHref}
+                aria-disabled={safePage === 1}
+                className={[
+                  "inline-flex h-9 items-center justify-center rounded-lg border px-4 text-sm font-medium transition",
+                  safePage === 1
+                    ? "pointer-events-none border-slate-200 text-slate-400 dark:border-slate-800 dark:text-slate-600"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800",
+                ].join(" ")}
+              >
+                Previous
               </Link>
-            );
-          })}
-        </section>
+
+              <form method="GET" className="flex flex-wrap items-center gap-2">
+                <label
+                  htmlFor="page-jump-alerts"
+                  className="text-sm text-slate-500 dark:text-slate-400"
+                >
+                  Go to
+                </label>
+                <input
+                  id="page-jump-alerts"
+                  name="page"
+                  type="number"
+                  min={1}
+                  max={totalPages}
+                  defaultValue={safePage}
+                  className="h-9 w-20 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-red-400 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                />
+                <button
+                  type="submit"
+                  className="inline-flex h-9 items-center justify-center rounded-lg bg-red-600 px-4 text-sm font-medium text-white transition hover:bg-red-700"
+                >
+                  Go
+                </button>
+              </form>
+
+              <Link
+                href={nextPageHref}
+                aria-disabled={safePage === totalPages}
+                className={[
+                  "inline-flex h-9 items-center justify-center rounded-lg border px-4 text-sm font-medium transition",
+                  safePage === totalPages
+                    ? "pointer-events-none border-slate-200 text-slate-400 dark:border-slate-800 dark:text-slate-600"
+                    : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800",
+                ].join(" ")}
+              >
+                Next
+              </Link>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

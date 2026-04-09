@@ -8,6 +8,30 @@ import { getEffectiveDeviceStatus } from "@/lib/device-status";
 
 type UiDeviceStatus = "online" | "offline" | "warning";
 
+type DevicesPageProps = {
+  searchParams?: Promise<{
+    siteId?: string;
+    status?: string;
+    page?: string;
+  }>;
+};
+
+type DeviceListItem = {
+  device_id: string;
+  serial_number: string;
+  device_type: string;
+  status: "online" | "offline" | "maintenance";
+  last_seen_at: Date | null;
+  site: {
+    name: string;
+  };
+  _count: {
+    sensors: number;
+  };
+};
+
+const PAGE_SIZE = 10;
+
 function mapDeviceStatus(
   status: "online" | "offline" | "maintenance"
 ): UiDeviceStatus {
@@ -25,6 +49,30 @@ function formatLastSeen(date: Date | null): string {
   }).format(date);
 }
 
+function parsePage(value?: string): number {
+  const page = Number(value);
+
+  if (!Number.isFinite(page) || page < 1) {
+    return 1;
+  }
+
+  return Math.floor(page);
+}
+
+function buildDevicesPageHref(params: {
+  page: number;
+  siteId?: string;
+  status?: string;
+}): string {
+  const search = new URLSearchParams();
+
+  if (params.siteId) search.set("siteId", params.siteId);
+  if (params.status) search.set("status", params.status);
+  search.set("page", String(params.page));
+
+  return `/devices?${search.toString()}`;
+}
+
 function DevicesOfflineNotice() {
   return (
     <section className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/40 dark:text-amber-200">
@@ -34,35 +82,15 @@ function DevicesOfflineNotice() {
   );
 }
 
-type DeviceListItem = {
-  device_id: string;
-  serial_number: string;
-  device_type: string;
-  status: "online" | "offline" | "maintenance";
-  last_seen_at: Date | null;
-  site: {
-    name: string;
-  };
-  _count: {
-    sensors: number;
-  };
-};
-
-type DevicesPageProps = {
-  searchParams?: Promise<{
-    siteId?: string;
-    status?: string;
-  }>;
-};
-
 export default async function DevicesPage({ searchParams }: DevicesPageProps) {
   const userId = await requireCurrentUserId();
 
   const params = (await searchParams) ?? {};
   const selectedSiteId = params.siteId?.trim() || "";
   const selectedStatus = params.status?.trim() || "";
+  const currentPage = parsePage(params.page);
 
-  let devices: DeviceListItem[] = [];
+  let allFilteredDevices: DeviceListItem[] = [];
   let hasLiveDataError = false;
   const hasActiveFilters = Boolean(selectedSiteId) || Boolean(selectedStatus);
 
@@ -83,8 +111,9 @@ export default async function DevicesPage({ searchParams }: DevicesPageProps) {
       name: "asc",
     },
   });
+
   try {
-    devices = await prisma.device.findMany({
+    const fetchedDevices = await prisma.device.findMany({
       where: {
         is_deleted: false,
         site: {
@@ -112,7 +141,8 @@ export default async function DevicesPage({ searchParams }: DevicesPageProps) {
         created_at: "desc",
       },
     });
-    devices = devices.filter((device) => {
+
+    allFilteredDevices = fetchedDevices.filter((device) => {
       if (!selectedStatus) return true;
 
       const effectiveStatus = getEffectiveDeviceStatus(
@@ -126,6 +156,27 @@ export default async function DevicesPage({ searchParams }: DevicesPageProps) {
     hasLiveDataError = true;
     console.error("Devices data load failed:", error);
   }
+
+  const totalDevices = allFilteredDevices.length;
+  const totalPages = Math.max(1, Math.ceil(totalDevices / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const startIndex = (safePage - 1) * PAGE_SIZE;
+  const devices = allFilteredDevices.slice(startIndex, startIndex + PAGE_SIZE);
+
+  const startItem = totalDevices === 0 ? 0 : startIndex + 1;
+  const endItem = Math.min(startIndex + PAGE_SIZE, totalDevices);
+
+  const previousPageHref = buildDevicesPageHref({
+    page: Math.max(1, safePage - 1),
+    siteId: selectedSiteId || undefined,
+    status: selectedStatus || undefined,
+  });
+
+  const nextPageHref = buildDevicesPageHref({
+    page: Math.min(totalPages, safePage + 1),
+    siteId: selectedSiteId || undefined,
+    status: selectedStatus || undefined,
+  });
 
   return (
     <div className="mx-auto w-full max-w-7xl space-y-6">
@@ -142,12 +193,13 @@ export default async function DevicesPage({ searchParams }: DevicesPageProps) {
         <div className="inline-flex w-fit items-center rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-600 shadow-sm dark:border-slate-800 dark:bg-slate-900 dark:text-slate-300">
           Total devices:
           <span className="ml-2 font-semibold text-slate-900 dark:text-white">
-            {hasLiveDataError ? "—" : devices.length}
+            {hasLiveDataError ? "—" : totalDevices}
           </span>
         </div>
       </section>
 
       {hasLiveDataError ? <DevicesOfflineNotice /> : null}
+
       <section className="rounded-2xl border border-slate-200 bg-white px-4 py-3 shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <form
           method="GET"
@@ -202,6 +254,7 @@ export default async function DevicesPage({ searchParams }: DevicesPageProps) {
           </div>
         </form>
       </section>
+
       <section className="rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
         <div className="flex flex-col gap-2 border-b border-slate-200 px-4 py-4 dark:border-slate-800 sm:px-5">
           <h3 className="text-lg font-semibold text-slate-900 dark:text-white">
@@ -232,6 +285,10 @@ export default async function DevicesPage({ searchParams }: DevicesPageProps) {
           />
         ) : (
           <>
+            <div className="border-b border-slate-200 px-4 py-3 text-sm text-slate-500 dark:border-slate-800 dark:text-slate-400 sm:px-5">
+              Showing {startItem} ~ {endItem} of {totalDevices} devices
+            </div>
+
             <div className="md:hidden">
               <div className="space-y-3 p-4">
                 {devices.map((device) => (
@@ -357,6 +414,74 @@ export default async function DevicesPage({ searchParams }: DevicesPageProps) {
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            <div className="flex flex-col gap-3 border-t border-slate-200 px-4 py-4 dark:border-slate-800 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+              <p className="text-sm text-slate-500 dark:text-slate-400">
+                Page {safePage} of {totalPages}
+              </p>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <Link
+                  href={previousPageHref}
+                  aria-disabled={safePage === 1}
+                  className={[
+                    "inline-flex h-9 items-center justify-center rounded-lg border px-4 text-sm font-medium transition",
+                    safePage === 1
+                      ? "pointer-events-none border-slate-200 text-slate-400 dark:border-slate-800 dark:text-slate-600"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800",
+                  ].join(" ")}
+                >
+                  Previous
+                </Link>
+
+                <form
+                  method="GET"
+                  className="flex items-center gap-2"
+                >
+                  {selectedSiteId ? (
+                    <input type="hidden" name="siteId" value={selectedSiteId} />
+                  ) : null}
+                  {selectedStatus ? (
+                    <input type="hidden" name="status" value={selectedStatus} />
+                  ) : null}
+
+                  <label
+                    htmlFor="page"
+                    className="text-sm text-slate-500 dark:text-slate-400"
+                  >
+                    Go to
+                  </label>
+                  <input
+                    id="page"
+                    name="page"
+                    type="number"
+                    min={1}
+                    max={totalPages}
+                    defaultValue={safePage}
+                    className="h-9 w-20 rounded-lg border border-slate-200 bg-white px-3 text-sm text-slate-900 outline-none transition focus:border-red-400 dark:border-slate-700 dark:bg-slate-950 dark:text-white"
+                  />
+                  <button
+                    type="submit"
+                    className="inline-flex h-9 items-center justify-center rounded-lg bg-red-600 px-4 text-sm font-medium text-white transition hover:bg-red-700"
+                  >
+                    Go
+                  </button>
+                </form>
+
+                <Link
+                  href={nextPageHref}
+                  aria-disabled={safePage === totalPages}
+                  className={[
+                    "inline-flex h-9 items-center justify-center rounded-lg border px-4 text-sm font-medium transition",
+                    safePage === totalPages
+                      ? "pointer-events-none border-slate-200 text-slate-400 dark:border-slate-800 dark:text-slate-600"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-100 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-300 dark:hover:bg-slate-800",
+                  ].join(" ")}
+                >
+                  Next
+                </Link>
+              </div>
             </div>
           </>
         )}
