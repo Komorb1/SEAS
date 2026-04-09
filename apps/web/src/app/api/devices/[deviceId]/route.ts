@@ -45,31 +45,12 @@ export async function DELETE(
       return Response.json({ error: "Forbidden" }, { status: 403 });
     }
 
-    const [sensorCount, readingCount, eventCount] = await Promise.all([
-      prisma.sensor.count({
-        where: { device_id: deviceId },
-      }),
-      prisma.sensorReading.count({
-        where: { sensor: { device_id: deviceId } },
-      }),
-      prisma.emergencyEvent.count({
-        where: { device_id: deviceId },
-      }),
-    ]);
-
-    if (sensorCount > 0 || readingCount > 0 || eventCount > 0) {
-      return Response.json(
-        {
-          error:
-            "This device cannot be deleted because it has related sensors, readings, or alerts.",
-        },
-        { status: 409 }
-      );
-    }
-
-    await prisma.device.delete({
-      where: {
-        device_id: deviceId,
+    await prisma.device.update({
+      where: { device_id: deviceId },
+      data: {
+        is_deleted: true,
+        deleted_at: new Date(),
+        status: "offline",
       },
     });
 

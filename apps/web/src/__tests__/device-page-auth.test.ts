@@ -88,6 +88,7 @@ describe("DeviceDetailPage authorization", () => {
     expect(mockDeviceFindFirst).toHaveBeenCalledWith({
       where: {
         device_id: "device-1",
+        is_deleted: false,
         site: {
           site_users: {
             some: {

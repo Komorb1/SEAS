@@ -48,6 +48,7 @@ export default async function SitesPage() {
   try {
     sites = await prisma.site.findMany({
       where: {
+        is_deleted: false,
         site_users: {
           some: {
             user_id: userId,

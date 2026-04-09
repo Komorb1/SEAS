@@ -39,8 +39,13 @@ export async function DELETE(req: NextRequest, ctx: RouteContext) {
       return Response.json({ error: "Not found" }, { status: 404 });
     }
 
-    await prisma.site.delete({
+    await prisma.site.update({
       where: { site_id: siteId },
+      data: {
+        is_deleted: true,
+        deleted_at: new Date(),
+        status: "inactive",
+      },
     });
 
     await safeAuditLog({

@@ -273,7 +273,10 @@ describe("Device deletion", () => {
       where: { device_id: emptyDeviceId },
     });
 
-    expect(dbDevice).toBeNull();
+    expect(dbDevice).not.toBeNull();
+    expect(dbDevice?.is_deleted).toBe(true);
+    expect(dbDevice?.deleted_at).toBeInstanceOf(Date);
+    expect(dbDevice?.status).toBe("offline");
   });
 
   test("viewer cannot delete device", async () => {
@@ -293,7 +296,7 @@ describe("Device deletion", () => {
     expect(dbDevice).not.toBeNull();
   });
 
-  test("owner cannot delete device when it has sensors", async () => {
+  test("owner can soft delete device when it has sensors", async () => {
     process.env.MOCK_USER_ID = OWNER_ID;
 
     const req = makeReq();
@@ -301,13 +304,13 @@ describe("Device deletion", () => {
       params: Promise.resolve({ deviceId: sensorDeviceId }),
     });
 
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(200);
 
-    const body = await readJson<{ error: string }>(res);
-    expect(body.error).toContain("cannot be deleted");
+    const body = await readJson<{ success: boolean }>(res);
+    expect(body.success).toBe(true);
   });
 
-  test("owner cannot delete device when it has readings", async () => {
+  test("owner can soft delete device when it has readings", async () => {
     process.env.MOCK_USER_ID = OWNER_ID;
 
     const req = makeReq();
@@ -315,13 +318,13 @@ describe("Device deletion", () => {
       params: Promise.resolve({ deviceId: readingDeviceId }),
     });
 
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(200);
 
-    const body = await readJson<{ error: string }>(res);
-    expect(body.error).toContain("cannot be deleted");
+    const body = await readJson<{ success: boolean }>(res);
+    expect(body.success).toBe(true);
   });
 
-  test("owner cannot delete device when it has alerts", async () => {
+  test("owner can soft delete device when it has alerts", async () => {
     process.env.MOCK_USER_ID = OWNER_ID;
 
     const req = makeReq();
@@ -329,9 +332,9 @@ describe("Device deletion", () => {
       params: Promise.resolve({ deviceId: eventDeviceId }),
     });
 
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(200);
 
-    const body = await readJson<{ error: string }>(res);
-    expect(body.error).toContain("cannot be deleted");
+    const body = await readJson<{ success: boolean }>(res);
+    expect(body.success).toBe(true);
   });
 });

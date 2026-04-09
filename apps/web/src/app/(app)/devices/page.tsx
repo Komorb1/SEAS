@@ -68,6 +68,7 @@ export default async function DevicesPage({ searchParams }: DevicesPageProps) {
 
   const authorizedSites = await prisma.site.findMany({
     where: {
+      is_deleted: false,
       site_users: {
         some: {
           user_id: userId,
@@ -85,6 +86,7 @@ export default async function DevicesPage({ searchParams }: DevicesPageProps) {
   try {
     devices = await prisma.device.findMany({
       where: {
+        is_deleted: false,
         site: {
           site_users: {
             some: {

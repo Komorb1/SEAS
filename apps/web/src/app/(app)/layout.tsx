@@ -1,5 +1,7 @@
 import { AppShell } from "@/components/layout/app-shell";
 import { CriticalAlertWatcher } from "@/components/alerts/critical-alert-watcher";
+import PWARegister from "@/components/pwa-register";
+import { PWAInstallProvider } from "@/components/pwa-install-provider";
 
 export default function ProtectedAppLayout({
   children,
@@ -9,7 +11,10 @@ export default function ProtectedAppLayout({
   return (
     <AppShell>
       <CriticalAlertWatcher />
-      {children}
+      <PWAInstallProvider>
+        <PWARegister />
+        {children}
+      </PWAInstallProvider>
     </AppShell>
   );
 }

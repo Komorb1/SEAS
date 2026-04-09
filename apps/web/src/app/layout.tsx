@@ -1,8 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import PWARegister from "@/components/pwa-register";
 import { ThemeProvider } from "@/components/theme/theme-provider";
-import { PWAInstallProvider } from "@/components/pwa-install-provider";
 
 export const metadata: Metadata = {
   title: "SEAS",
@@ -26,10 +24,7 @@ export default function RootLayout({
     <html lang="en" suppressHydrationWarning>
       <body className="min-h-screen">
         <ThemeProvider>
-          <PWAInstallProvider>
-            <PWARegister />
             {children}
-          </PWAInstallProvider>
         </ThemeProvider>
       </body>
     </html>

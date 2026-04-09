@@ -50,6 +50,7 @@ export default async function SiteDetailsPage({
   const site = await prisma.site.findFirst({
     where: {
       site_id: siteId,
+      is_deleted: false,
       site_users: {
         some: {
           user_id: userId,
@@ -58,6 +59,9 @@ export default async function SiteDetailsPage({
     },
     include: {
       devices: {
+        where: {
+          is_deleted: false,
+        },
         orderBy: {
           created_at: "desc",
         },

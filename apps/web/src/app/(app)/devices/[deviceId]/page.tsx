@@ -59,6 +59,7 @@ export default async function DeviceDetailPage({
   const device = await prisma.device.findFirst({
     where: {
       device_id: deviceId,
+      is_deleted: false,
       site: {
         site_users: {
           some: {
