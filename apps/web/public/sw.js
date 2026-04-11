@@ -1,4 +1,4 @@
-const STATIC_CACHE = "seas-static-v13";
+const STATIC_CACHE = "seas-static-v16"; // Bumped version to force an update
 const OFFLINE_URL = "/offline.html";
 
 const STATIC_ASSETS = [
@@ -15,6 +15,7 @@ const STATIC_ASSETS = [
   "/icons/icon-256x256.png",
   "/icons/icon-384x384.png",
   "/icons/icon-512x512.png",
+  "/alarm.mp3"
 ];
 
 self.addEventListener("install", (event) => {
@@ -45,7 +46,6 @@ self.addEventListener("fetch", (event) => {
 
   if (url.origin !== self.location.origin) return;
 
-  // Never interfere with Next.js internals or app/API data
   if (
     url.pathname.startsWith("/_next/") ||
     url.pathname.startsWith("/api/") ||
@@ -60,10 +60,10 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Cache-first only for static PWA assets
   if (
     url.pathname === "/manifest.webmanifest" ||
     url.pathname === "/icon.ico" ||
+    url.pathname === "/alarm.mp3" ||
     url.pathname.startsWith("/icons/")
   ) {
     event.respondWith(
@@ -72,7 +72,9 @@ self.addEventListener("fetch", (event) => {
         if (cached) return cached;
 
         const response = await fetch(request);
-        if (response.ok) {
+        
+        // FIX: Only cache full 200 OK responses. Ignore 206 Partial Content.
+        if (response.status === 200) {
           const cache = await caches.open(STATIC_CACHE);
           await cache.put(request, response.clone());
         }
@@ -82,8 +84,6 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // For normal page navigations outside protected app pages:
-  // network first, offline fallback only
   if (request.mode === "navigate") {
     event.respondWith(
       (async () => {
@@ -116,16 +116,41 @@ self.addEventListener("push", (event) => {
   }
 
   const title = data.title || "Critical Alert";
-  const options = {
-    body: data.body || "A critical alert requires your attention.",
-    icon: data.icon || "/icons/icon-192x192.png",
-    badge: data.badge || "/icons/icon-192x192.png",
-    tag: data.tag || "critical-alert",
-    data: data.data || {},
-    renotify: true,
-  };
+  const isCritical = data.data?.severity === "critical";
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientList) => {
+      const hasOpenClients = clientList.length > 0;
+      const isFocused = clientList.some((client) => client.visibilityState === "visible");
+
+      // 1. Send the alarm trigger to ALL open instances (even background tabs)
+      if (hasOpenClients && isCritical) {
+        clientList.forEach((client) => {
+          client.postMessage({
+            type: "PLAY_NATIVE_ALARM",
+            payload: data,
+          });
+        });
+      }
+
+      // 2. Only show the OS notification if the app is NOT actively focused
+      if (!isFocused) {
+        const options = {
+          body: data.body || "A critical alert requires your attention.",
+          icon: data.icon || "/icons/icon-192x192.png",
+          badge: data.badge || "/icons/icon-192x192.png",
+          tag: data.tag || "critical-alert",
+          data: data.data || {},
+          renotify: true,
+          requireInteraction: isCritical,
+          vibrate: isCritical ? [500, 250, 500, 250, 500, 250, 500, 250, 1000] : undefined,
+          silent: false // Explicitly request the OS to play its default notification sound
+        };
+
+        return self.registration.showNotification(title, options);
+      }
+    })
+  );
 });
 
 self.addEventListener("notificationclick", (event) => {

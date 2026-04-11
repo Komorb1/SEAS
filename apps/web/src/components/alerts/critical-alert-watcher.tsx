@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ShieldAlert, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 
 type LatestCriticalAlert = {
   event_id: string;
@@ -26,86 +26,130 @@ function formatEnumLabel(value: string): string {
 }
 
 export function CriticalAlertWatcher() {
-
   const [alert, setAlert] = useState<LatestCriticalAlert | null>(null);
   const [dismissedAlertId, setDismissedAlertId] = useState<string | null>(null);
 
   const seenAlertIdRef = useRef<string | null>(null);
   const initializedRef = useRef(false);
+  const alarmAudioRef = useRef<HTMLAudioElement | null>(null);
 
+  // 1. Setup Audio object once on mount
   useEffect(() => {
-
-
-    let cancelled = false;
-
-    async function checkLatestCriticalAlert() {
-      try {
-        const response = await fetch("/api/alerts/latest-critical", {
-          method: "GET",
-          cache: "no-store",
-          credentials: "include",
-        });
-
-        if (cancelled) return;
-
-        if (response.status === 401) {
-          setAlert(null);
-          return;
-        }
-
-        if (!response.ok) return;
-
-        const data = (await response.json()) as {
-          alert: LatestCriticalAlert | null;
-        };
-
-        const nextAlert = data.alert;
-
-        if (!initializedRef.current) {
-          initializedRef.current = true;
-          seenAlertIdRef.current = nextAlert?.event_id ?? null;
-          return;
-        }
-
-        if (!nextAlert) {
-          seenAlertIdRef.current = null;
-          setAlert(null);
-          return;
-        }
-
-        if (
-          nextAlert.event_id !== seenAlertIdRef.current &&
-          nextAlert.event_id !== dismissedAlertId
-        ) {
-          seenAlertIdRef.current = nextAlert.event_id;
-          setAlert(nextAlert);
-
-          if (
-            typeof window !== "undefined" &&
-            "navigator" in window &&
-            "vibrate" in navigator
-          ) {
-            navigator.vibrate?.([300, 150, 300]);
-          }
-        }
-      } catch (error) {
-        console.error("Critical alert watcher failed:", error);
+    if (typeof window !== "undefined") {
+      alarmAudioRef.current = new Audio("/alarm.mp3");
+      alarmAudioRef.current.loop = true;
+    }
+    return () => {
+      if (alarmAudioRef.current) {
+        alarmAudioRef.current.pause();
+        alarmAudioRef.current = null;
       }
+    };
+  }, []);
+
+  // 2. Play or pause the audio whenever the alert state changes
+  useEffect(() => {
+    if (alert && alarmAudioRef.current) {
+      alarmAudioRef.current.play().catch((err) => {
+        console.warn("Autoplay blocked. User must interact with document first.", err);
+      });
+      if (typeof window !== "undefined" && "vibrate" in navigator) {
+        navigator.vibrate?.([500, 250, 500, 250, 500]);
+      }
+    } else if (!alert && alarmAudioRef.current) {
+      alarmAudioRef.current.pause();
+      alarmAudioRef.current.currentTime = 0;
+    }
+  }, [alert]);
+
+  // 3. Declare the fetch function using useCallback before it is used
+  const checkLatestCriticalAlert = useCallback(async () => {
+    try {
+      const response = await fetch("/api/alerts/latest-critical", {
+        method: "GET",
+        cache: "no-store",
+        credentials: "include",
+      });
+
+      if (response.status === 401) {
+        setAlert(null);
+        return;
+      }
+
+      if (!response.ok) return;
+
+      const data = (await response.json()) as {
+        alert: LatestCriticalAlert | null;
+      };
+
+      const nextAlert = data.alert;
+
+      if (!initializedRef.current) {
+        initializedRef.current = true;
+        seenAlertIdRef.current = nextAlert?.event_id ?? null;
+        return;
+      }
+
+      if (!nextAlert) {
+        seenAlertIdRef.current = null;
+        setAlert(null);
+        return;
+      }
+
+      if (
+        nextAlert.event_id !== seenAlertIdRef.current &&
+        nextAlert.event_id !== dismissedAlertId
+      ) {
+        seenAlertIdRef.current = nextAlert.event_id;
+        setAlert(nextAlert);
+      }
+    } catch (error) {
+      console.error("Critical alert watcher failed:", error);
+    }
+  }, [dismissedAlertId]);
+
+  // 4. Listen for Service Worker background messages
+  useEffect(() => {
+    const handleServiceWorkerMessage = (event: MessageEvent) => {
+      if (event.data?.type === "PLAY_NATIVE_ALARM") {
+        checkLatestCriticalAlert();
+      }
+    };
+
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.addEventListener("message", handleServiceWorkerMessage);
     }
 
-    checkLatestCriticalAlert();
-    const intervalId = window.setInterval(checkLatestCriticalAlert, 5000);
+    return () => {
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.removeEventListener("message", handleServiceWorkerMessage);
+      }
+    };
+  }, [checkLatestCriticalAlert]);
+
+  // 5. Polling interval fallback
+  useEffect(() => {
+    let cancelled = false;
+
+    const intervalId = window.setInterval(() => {
+      if (!cancelled) checkLatestCriticalAlert();
+    }, 5000);
 
     return () => {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [dismissedAlertId]);
+  }, [checkLatestCriticalAlert]);
 
   if (!alert) return null;
 
+  const handleDismiss = () => {
+    setDismissedAlertId(alert.event_id);
+    setAlert(null);
+  };
+
   return (
-    <div className="fixed inset-x-4 top-4 z-100 mx-auto w-full max-w-xl rounded-2xl border border-red-300 bg-red-50 p-4 shadow-lg dark:border-red-900/50 dark:bg-red-950/90">
+    <div className="fixed inset-x-4 top-4 z-100 mx-auto w-full max-w-xl rounded-2xl border border-red-300 bg-red-50 p-4 shadow-lg dark:border-red-900/50 dark:bg-red-950/90 animate-pulse">
       <div className="flex items-start gap-3">
         <div className="rounded-full bg-red-100 p-2 text-red-700 dark:bg-red-900/60 dark:text-red-300">
           <ShieldAlert className="h-5 w-5" />
@@ -127,6 +171,7 @@ export function CriticalAlertWatcher() {
           <div className="mt-3 flex flex-wrap gap-2">
             <Link
               href={`/alerts/${alert.event_id}`}
+              onClick={handleDismiss}
               className="inline-flex h-9 items-center justify-center rounded-lg bg-red-600 px-4 text-sm font-medium text-white transition hover:bg-red-700"
             >
               View alert
@@ -134,6 +179,7 @@ export function CriticalAlertWatcher() {
 
             <Link
               href="/alerts"
+              onClick={handleDismiss}
               className="inline-flex h-9 items-center justify-center rounded-lg border border-red-200 bg-white px-4 text-sm font-medium text-red-800 transition hover:bg-red-100 dark:border-red-800 dark:bg-red-950 dark:text-red-200 dark:hover:bg-red-900/60"
             >
               Open alerts
@@ -143,10 +189,7 @@ export function CriticalAlertWatcher() {
 
         <button
           type="button"
-          onClick={() => {
-            setDismissedAlertId(alert.event_id);
-            setAlert(null);
-          }}
+          onClick={handleDismiss}
           className="rounded-lg p-1 text-red-700 transition hover:bg-red-100 dark:text-red-300 dark:hover:bg-red-900/60"
           aria-label="Dismiss critical alert notification"
         >
