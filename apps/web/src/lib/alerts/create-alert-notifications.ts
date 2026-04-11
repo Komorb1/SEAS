@@ -130,12 +130,17 @@ export async function createAlertNotificationsForEvent(
       event.description?.trim() || "Critical condition detected",
     ];
 
+    // The Universal Cross-Platform Payload
     const payload = {
       title,
       body: bodyParts.join(" • "),
       icon: "/icons/icon-192x192.png",
-      badge: "/icons/icon-192x192.png",
+      badge: "/icons/icon-192x192.png", 
       tag: `event-${event.event_id}`,
+      vibrate: [500, 250, 500, 250, 500, 250, 500], 
+      renotify: true, 
+      requireInteraction: true,
+      silent: false,
       data: {
         url: `/alerts/${event.event_id}`,
         alertId: alertNotification.alert_id,

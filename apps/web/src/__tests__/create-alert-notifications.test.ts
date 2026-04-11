@@ -202,6 +202,9 @@ describe("createAlertNotificationsForEvent", () => {
         body: "Factory A • ESP32-001 • Dangerous gas level detected",
         icon: "/icons/icon-192x192.png",
         badge: "/icons/icon-192x192.png",
+        renotify: true,
+        requireInteraction: true,
+        silent: false,
         tag: "event-event-1",
         data: {
           url: "/alerts/event-1",
@@ -213,6 +216,7 @@ describe("createAlertNotificationsForEvent", () => {
           eventType: "gas_leak",
           timestamp: "2026-03-25T12:00:00.000Z",
         },
+        vibrate: [500, 250, 500, 250, 500, 250, 500],
       }
     );
 
