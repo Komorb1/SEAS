@@ -128,18 +128,18 @@ export function CriticalAlertWatcher() {
   }, [checkLatestCriticalAlert]);
 
   // 5. Polling interval fallback
-  // useEffect(() => {
-  //  let cancelled = false;
+   useEffect(() => {
+    let cancelled = false;
 
-  //   const intervalId = window.setInterval(() => {
-  //     if (!cancelled) checkLatestCriticalAlert();
-  //   }, 5000);
+     const intervalId = window.setInterval(() => {
+       if (!cancelled) checkLatestCriticalAlert();
+     }, 10000);
 
-  //   return () => {
-  //     cancelled = true;
-  //     window.clearInterval(intervalId);
-  //   };
-  // }, [checkLatestCriticalAlert]);
+     return () => {
+       cancelled = true;
+       window.clearInterval(intervalId);
+     };
+   }, [checkLatestCriticalAlert]);
 
   if (!alert) return null;
 

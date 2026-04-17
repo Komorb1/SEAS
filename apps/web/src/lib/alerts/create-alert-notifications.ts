@@ -18,8 +18,6 @@ function formatEventTypeLabel(eventType: string) {
 export async function createAlertNotificationsForEvent(
   input: CreateAlertNotificationsInput
 ) {
-  console.log(`🚀 Starting push notification process for Event: ${input.eventId}, Site: ${input.siteId}`);
-
   const event = await prisma.emergencyEvent.findUnique({
     where: { event_id: input.eventId },
     select: {
@@ -37,12 +35,8 @@ export async function createAlertNotificationsForEvent(
   });
 
   if (!event) {
-    console.error("❌ Abort: Event not found in database.");
     throw new Error("event_not_found");
   }
-
-  console.log(`📋 Event found. Severity is: "${event.severity}"`);
-
   const siteUsers = await prisma.siteUser.findMany({
     where: {
       site_id: input.siteId,
@@ -52,16 +46,8 @@ export async function createAlertNotificationsForEvent(
   });
 
   if (siteUsers.length === 0) {
-    console.warn(`⚠️ Abort: No users found linked to site ${input.siteId}`);
-    return { created: 0, delivered: 0, failed: 0 };
+    return;
   }
-
-  console.log(`👥 Found ${siteUsers.length} users linked to this site.`);
-
-  let created = 0;
-  let delivered = 0;
-  let failed = 0;
-
   const recipientUserIds = siteUsers.map((siteUser) => siteUser.user_id);
 
   const activeSubscriptions = await prisma.pushSubscription.findMany({
@@ -77,8 +63,6 @@ export async function createAlertNotificationsForEvent(
       auth_key: true,
     },
   });
-
-  console.log(`📡 Found ${activeSubscriptions.length} total active push subscriptions in the database.`);
 
   const subscriptionsByUserId = new Map();
   for (const subscription of activeSubscriptions) {
@@ -107,18 +91,15 @@ export async function createAlertNotificationsForEvent(
         },
         select: { alert_id: true },
       });
-      created += 1;
     }
 
     if (event.severity !== "critical") {
-      console.warn(`⚠️ Skipping push for user ${siteUser.user_id}: Event severity is not strictly "critical". It is "${event.severity}".`);
       continue;
     }
 
     const userSubscriptions = subscriptionsByUserId.get(siteUser.user_id) ?? [];
 
     if (userSubscriptions.length === 0) {
-      console.warn(`⚠️ Skipping push for user ${siteUser.user_id}: They have 0 active push subscriptions.`);
       continue;
     }
 
@@ -152,26 +133,14 @@ export async function createAlertNotificationsForEvent(
         timestamp: event.created_at.toISOString(),
       },
     };
-
-    let deliveredForUser = false;
-
     for (const subscription of userSubscriptions) {
-      try {
-        console.log(`📤 Dispatching web push to subscription ending in ...${subscription.endpoint.slice(-10)}`);
-        
+      try {        
         await sendWebPushNotification(
           toWebPushSubscription(subscription),
           payload
         );
-
-        console.log(`✅ Push successfully delivered!`);
-        delivered += 1;
-        deliveredForUser = true;
       } catch (error) {
-        console.error("❌ Web push delivery failed for this subscription:", error);
-
         if (isExpiredPushSubscriptionError(error)) {
-          console.log("♻️ Subscription expired. Deactivating in database.");
           await prisma.pushSubscription.update({
             where: { subscription_id: subscription.subscription_id },
             data: { is_active: false, revoked_at: new Date() },
@@ -182,12 +151,7 @@ export async function createAlertNotificationsForEvent(
 
     await prisma.alertNotification.update({
       where: { alert_id: alertNotification.alert_id },
-      data: { status: deliveredForUser ? "sent" : "failed" },
+      data: { status: "sent" },
     });
-
-    if (!deliveredForUser) failed += 1;
   }
-
-  console.log(`🏁 Notification process complete. Created: ${created}, Delivered: ${delivered}, Failed: ${failed}`);
-  return { created, delivered, failed };
 }
