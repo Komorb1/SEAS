@@ -90,6 +90,7 @@ describe("createAlertNotificationsForEvent", () => {
       siteId: "site-1",
     });
 
+    expect(result.created).toBe(0);
     expect(mockPushSubscriptionFindMany).not.toHaveBeenCalled();
     expect(mockAlertNotificationCreate).not.toHaveBeenCalled();
     expect(sendWebPushNotificationMock).not.toHaveBeenCalled();
@@ -132,6 +133,7 @@ describe("createAlertNotificationsForEvent", () => {
       siteId: "site-1",
     });
 
+    expect(result.created).toBe(2);
     expect(mockAlertNotificationCreate).toHaveBeenCalledTimes(2);
     expect(sendWebPushNotificationMock).not.toHaveBeenCalled();
     expect(mockAlertNotificationUpdate).not.toHaveBeenCalled();
@@ -162,6 +164,7 @@ describe("createAlertNotificationsForEvent", () => {
       siteId: "site-1",
     });
 
+    expect(result.created).toBe(1);
     expect(toWebPushSubscriptionMock).toHaveBeenCalledWith({
       subscription_id: "sub-1",
       user_id: "user-1",
@@ -220,6 +223,7 @@ describe("createAlertNotificationsForEvent", () => {
       siteId: "site-1",
     });
 
+    expect(result.created).toBe(1);
     expect(sendWebPushNotificationMock).not.toHaveBeenCalled();
     expect(mockAlertNotificationUpdate).not.toHaveBeenCalled();
   });
@@ -255,6 +259,7 @@ describe("createAlertNotificationsForEvent", () => {
       siteId: "site-1",
     });
 
+    expect(result.created).toBe(1);
     expect(mockPushSubscriptionUpdate).toHaveBeenCalledWith({
       where: { subscription_id: "sub-1" },
       data: {
