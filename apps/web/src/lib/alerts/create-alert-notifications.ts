@@ -33,7 +33,7 @@ export async function createAlertNotificationsForEvent(
       device: { select: { serial_number: true } },
     },
   });
-
+  
   if (!event) {
     throw new Error("event_not_found");
   }
@@ -46,7 +46,7 @@ export async function createAlertNotificationsForEvent(
   });
 
   if (siteUsers.length === 0) {
-    return;
+    return { created: 0 };
   }
   const recipientUserIds = siteUsers.map((siteUser) => siteUser.user_id);
 
@@ -71,6 +71,8 @@ export async function createAlertNotificationsForEvent(
     subscriptionsByUserId.set(subscription.user_id, existing);
   }
 
+  let createdCount = 0;
+
   for (const siteUser of siteUsers) {
     let alertNotification = await prisma.alertNotification.findFirst({
       where: {
@@ -91,6 +93,7 @@ export async function createAlertNotificationsForEvent(
         },
         select: { alert_id: true },
       });
+      createdCount++;
     }
 
     if (event.severity !== "critical") {
@@ -154,4 +157,5 @@ export async function createAlertNotificationsForEvent(
       data: { status: "sent" },
     });
   }
+  return { created: createdCount };
 }

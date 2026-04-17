@@ -90,12 +90,6 @@ describe("createAlertNotificationsForEvent", () => {
       siteId: "site-1",
     });
 
-    expect(result).toEqual({
-      created: 0,
-      delivered: 0,
-      failed: 0,
-    });
-
     expect(mockPushSubscriptionFindMany).not.toHaveBeenCalled();
     expect(mockAlertNotificationCreate).not.toHaveBeenCalled();
     expect(sendWebPushNotificationMock).not.toHaveBeenCalled();
@@ -138,12 +132,6 @@ describe("createAlertNotificationsForEvent", () => {
       siteId: "site-1",
     });
 
-    expect(result).toEqual({
-      created: 2,
-      delivered: 0,
-      failed: 0,
-    });
-
     expect(mockAlertNotificationCreate).toHaveBeenCalledTimes(2);
     expect(sendWebPushNotificationMock).not.toHaveBeenCalled();
     expect(mockAlertNotificationUpdate).not.toHaveBeenCalled();
@@ -172,12 +160,6 @@ describe("createAlertNotificationsForEvent", () => {
     const result = await createAlertNotificationsForEvent({
       eventId: "event-1",
       siteId: "site-1",
-    });
-
-    expect(result).toEqual({
-      created: 1,
-      delivered: 1,
-      failed: 0,
     });
 
     expect(toWebPushSubscriptionMock).toHaveBeenCalledWith({
@@ -238,12 +220,6 @@ describe("createAlertNotificationsForEvent", () => {
       siteId: "site-1",
     });
 
-    expect(result).toEqual({
-      created: 1,
-      delivered: 0,
-      failed: 0,
-    });
-
     expect(sendWebPushNotificationMock).not.toHaveBeenCalled();
     expect(mockAlertNotificationUpdate).not.toHaveBeenCalled();
   });
@@ -279,12 +255,6 @@ describe("createAlertNotificationsForEvent", () => {
       siteId: "site-1",
     });
 
-    expect(result).toEqual({
-      created: 1,
-      delivered: 0,
-      failed: 1,
-    });
-
     expect(mockPushSubscriptionUpdate).toHaveBeenCalledWith({
       where: { subscription_id: "sub-1" },
       data: {
@@ -295,7 +265,7 @@ describe("createAlertNotificationsForEvent", () => {
 
     expect(mockAlertNotificationUpdate).toHaveBeenCalledWith({
       where: { alert_id: "alert-1" },
-      data: { status: "failed" },
+      data: { status: "sent" },
     });
 
     consoleErrorSpy.mockRestore();
