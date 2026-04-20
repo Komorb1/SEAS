@@ -80,13 +80,13 @@ The simulator supports the following scenarios:
 
 ## Configuration
 
-Create a local `config.json` file inside `firmware/` based on `config.example.json`.
+Create a local `config.json` file inside `firmware/` based on `config.json`.
 
 Example structure:
 
 ```json
 {
-  "base_url": "https://seas-web.vercel.app",
+  "base_url": "https://seas-web.netlify.app",
   "device_serial_number": "SEAS-SIM-001",
   "interval_seconds": 5,
   "request_timeout_seconds": 15,
