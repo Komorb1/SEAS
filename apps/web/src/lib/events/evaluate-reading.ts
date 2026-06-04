@@ -1,8 +1,9 @@
-import { Severity, EventType, SensorType } from "@prisma/client";
+import { EventType, SecurityMode, SensorType, Severity } from "@prisma/client";
 
 type EvaluationInput = {
   sensorType: SensorType;
   rawValue: string;
+  securityMode: SecurityMode;
 };
 
 type EventDraft = {
@@ -33,6 +34,7 @@ export function evaluateReadingForEvent(
           description: `Gas reading reached ${numericValue}. Immediate action recommended.`,
         };
       }
+
       if (numericValue >= 300) {
         return {
           event_type: "gas",
@@ -41,6 +43,7 @@ export function evaluateReadingForEvent(
           description: `Gas reading reached ${numericValue}.`,
         };
       }
+
       return null;
     }
 
@@ -50,9 +53,10 @@ export function evaluateReadingForEvent(
           event_type: "smoke",
           severity: "critical",
           title: "Critical smoke level detected",
-          description: `Smoke reading reached ${numericValue}.`,
+          description: `Smoke reading reached ${numericValue}. Immediate action recommended.`,
         };
       }
+
       if (numericValue >= 200) {
         return {
           event_type: "smoke",
@@ -61,6 +65,7 @@ export function evaluateReadingForEvent(
           description: `Smoke reading reached ${numericValue}.`,
         };
       }
+
       return null;
     }
 
@@ -73,32 +78,40 @@ export function evaluateReadingForEvent(
           description: "Flame sensor reported a detection.",
         };
       }
+
       return null;
     }
 
     case "motion": {
+      if (input.securityMode !== "armed") return null;
+
       if (numericValue >= 1) {
         return {
           event_type: "intrusion",
-          severity: "medium",
+          severity: "high",
           title: "Motion detected",
-          description: "Motion sensor reported activity.",
+          description: "Motion sensor reported activity while the site is armed.",
         };
       }
+
       return null;
     }
 
     case "door": {
+      if (input.securityMode !== "armed") return null;
+
       if (numericValue >= 1) {
         return {
           event_type: "intrusion",
-          severity: "medium",
+          severity: "high",
           title: "Door opened",
-          description: "Door sensor reported an open state.",
+          description: "Door sensor reported an open state while the site is armed.",
         };
       }
+
       return null;
     }
+
     default:
       return null;
   }

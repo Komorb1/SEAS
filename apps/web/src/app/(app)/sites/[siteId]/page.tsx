@@ -4,6 +4,7 @@ import { requireCurrentUserId } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ArrowLeft } from "lucide-react";
 import { SiteStatusAction } from "@/components/sites/site-status-action";
+import { SiteSecurityModeAction } from "@/components/sites/site-security-mode-action";
 import { RegisterDeviceForm } from "@/components/sites/register-device-form";
 import { DeleteSiteAction } from "@/components/sites/delete-site-action";
 import { SiteMembersManager } from "@/components/sites/site-members-manager";
@@ -170,6 +171,10 @@ export default async function SiteDetailsPage({
                 <SiteStatusAction
                   siteId={site.site_id}
                   currentStatus={site.status}
+                />
+                <SiteSecurityModeAction
+                  siteId={site.site_id}
+                  currentMode={site.security_mode}
                 />
                 <RegisterDeviceForm siteId={site.site_id} />
               </>

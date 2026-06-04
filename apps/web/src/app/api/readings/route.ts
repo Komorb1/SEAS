@@ -46,6 +46,11 @@ export async function POST(req: NextRequest) {
             device_id: true,
             site_id: true,
             serial_number: true,
+            site: {
+              select: {
+                security_mode: true,
+              },
+            },
           },
         },
       },
@@ -106,6 +111,7 @@ export async function POST(req: NextRequest) {
     const eventDraft = evaluateReadingForEvent({
       sensorType: sensor.sensor_type,
       rawValue: value,
+      securityMode: sensor.device.site.security_mode,
     });
 
     if (eventDraft) {
