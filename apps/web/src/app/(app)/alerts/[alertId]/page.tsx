@@ -43,6 +43,36 @@ function formatDateTime(date: Date | null): string {
   }).format(date);
 }
 
+function formatSensorReading(
+  sensorType: string | null | undefined,
+  value: unknown
+): string {
+  const normalizedType = String(sensorType ?? "").toLowerCase();
+  const normalizedValue = String(value);
+
+  if (normalizedType === "motion") {
+    return normalizedValue === "1" ? "Motion detected" : "No motion";
+  }
+
+  if (normalizedType === "flame") {
+    return normalizedValue === "1" ? "Flame detected" : "No flame";
+  }
+
+  if (normalizedType === "door") {
+    return normalizedValue === "1" ? "Door open" : "Door closed";
+  }
+
+  if (
+    normalizedType === "gas" ||
+    normalizedType === "smoke" ||
+    normalizedType === "gas_smoke"
+  ) {
+    return normalizedValue === "1" ? "Gas/smoke detected" : "Normal";
+  }
+
+  return normalizedValue;
+}
+
 type AlertDetailPageProps = {
   params: Promise<{
     alertId: string;
@@ -345,7 +375,7 @@ export default async function AlertDetailPage({
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
                         <p className="text-sm font-medium text-slate-900 dark:text-white">
-                          {String(reading.value)} {reading.unit ?? ""}
+                          {formatSensorReading(alert.sensor?.sensor_type, reading.value)}
                         </p>
                         <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
                           Quality: {formatEnumLabel(String(reading.quality_flag))}

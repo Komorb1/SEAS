@@ -39,9 +39,34 @@ function formatDateTime(date: Date | null): string {
   }).format(date);
 }
 
-function formatReadingValue(value: unknown): string {
-  if (value == null) return "N/A";
-  return String(value);
+function formatSensorReading(
+  sensorType: string | null | undefined,
+  value: unknown
+): string {
+  const normalizedType = String(sensorType ?? "").toLowerCase();
+  const normalizedValue = String(value);
+
+  if (normalizedType === "motion") {
+    return normalizedValue === "1" ? "Motion detected" : "No motion";
+  }
+
+  if (normalizedType === "flame") {
+    return normalizedValue === "1" ? "Flame detected" : "No flame";
+  }
+
+  if (normalizedType === "door") {
+    return normalizedValue === "1" ? "Door open" : "Door closed";
+  }
+
+  if (
+    normalizedType === "gas" ||
+    normalizedType === "smoke" ||
+    normalizedType === "gas_smoke"
+  ) {
+    return normalizedValue === "1" ? "Gas/smoke detected" : "Normal";
+  }
+
+  return normalizedValue;
 }
 
 function parsePage(value?: string): number {
@@ -378,7 +403,7 @@ export default async function ReadingsPage({
                           {reading.sensor.device.serial_number}
                         </p>
                         <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-                          {reading.sensor.device.site.name}
+                          {formatSensorReading(reading.sensor.sensor_type, reading.value)}
                         </p>
                       </div>
 
@@ -403,7 +428,7 @@ export default async function ReadingsPage({
                         <span>
                           Value:{" "}
                           <span className="font-medium">
-                            {formatReadingValue(reading.value)} {reading.unit ?? ""}
+                            {formatSensorReading(reading.sensor.sensor_type, reading.value)}
                           </span>
                         </span>
                       </div>
@@ -456,7 +481,7 @@ export default async function ReadingsPage({
                       </td>
 
                       <td className="px-5 py-4 text-slate-700 dark:text-slate-300">
-                        {formatReadingValue(reading.value)} {reading.unit ?? ""}
+                        {formatSensorReading(reading.sensor.sensor_type, reading.value)}
                       </td>
 
                       <td className="px-5 py-4 text-slate-700 dark:text-slate-300">

@@ -44,6 +44,33 @@ function formatDateTime(date: Date | null): string {
   }).format(date);
 }
 
+function formatSensorReading(sensorType: string, value: string | number): string {
+  const normalizedType = sensorType.toLowerCase();
+  const normalizedValue = String(value);
+
+  if (normalizedType === "motion") {
+    return normalizedValue === "1" ? "Motion detected" : "No motion";
+  }
+
+  if (normalizedType === "flame") {
+    return normalizedValue === "1" ? "Flame detected" : "No flame";
+  }
+
+  if (normalizedType === "door") {
+    return normalizedValue === "1" ? "Door open" : "Door closed";
+  }
+
+  if (
+    normalizedType === "gas" ||
+    normalizedType === "smoke" ||
+    normalizedType === "gas_smoke"
+  ) {
+    return normalizedValue === "1" ? "Gas/smoke detected" : "Normal";
+  }
+
+  return String(value);
+}
+
 type DeviceDetailPageProps = {
   params: Promise<{
     deviceId: string;
@@ -246,7 +273,7 @@ const uiStatus = mapDeviceStatusToBadgeStatus(effectiveStatus);
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                       <div>
                         <p className="text-sm font-medium text-slate-900 dark:text-white">
-                          {String(reading.value)} {reading.unit ?? ""}
+                          {formatSensorReading(String(reading.sensor.sensor_type), String(reading.value))}
                         </p>
                         <p className="mt-1 text-xs text-slate-500 dark:text-slate-500">
                           Sensor:{" "}
