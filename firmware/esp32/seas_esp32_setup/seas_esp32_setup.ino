@@ -55,6 +55,12 @@ String deviceSecret;
 String deviceToken = "";
 unsigned long deviceTokenExpiresAt = 0;
 
+// Backend sensor IDs returned by /api/devices/sensors/sync
+String motionSensorId = "";
+String flameSensorId = "";
+String doorSensorId = "";
+String gasSmokeSensorId = "";
+
 bool setupPortalActive = false;
 bool hasProvisionedThisBoot = false;
 
@@ -63,6 +69,24 @@ bool hasProvisionedThisBoot = false;
 // =====================
 void logLine(const String& message) {
   Serial.println("[SEAS] " + message);
+}
+
+void clearSensorIds() {
+  motionSensorId = "";
+  flameSensorId = "";
+  doorSensorId = "";
+  gasSmokeSensorId = "";
+}
+
+bool sensorIdsReady() {
+  return motionSensorId.length() > 0 &&
+         flameSensorId.length() > 0 &&
+         doorSensorId.length() > 0 &&
+         gasSmokeSensorId.length() > 0;
+}
+
+void logSensorMapping(const String& localKey, const String& sensorId) {
+  logLine("Sensor mapped: " + localKey + " -> " + sensorId);
 }
 
 void initHardware() {
@@ -160,6 +184,7 @@ void clearDeviceSecret() {
   deviceSecret = "";
   deviceToken = "";
   deviceTokenExpiresAt = 0;
+  clearSensorIds();
 
   logLine("Device secret cleared.");
 }
@@ -492,13 +517,53 @@ bool syncDeviceSensors() {
 
   logLine("Sensor sync response code: " + String(httpCode));
 
+  StaticJsonDocument<4096> responseBody;
+  DeserializationError error = deserializeJson(responseBody, response);
+
+  if (error) {
+    logLine("Sensor sync response JSON parse failed.");
+    return false;
+  }
+
   if (httpCode >= 200 && httpCode < 300) {
+    clearSensorIds();
+
+    JsonArray syncedSensors = responseBody["sensors"].as<JsonArray>();
+
+    for (JsonObject sensor : syncedSensors) {
+      const char* externalKey = sensor["external_key"] | "";
+      const char* sensorId = sensor["sensor_id"] | "";
+
+      if (!strlen(externalKey) || !strlen(sensorId)) {
+        continue;
+      }
+
+      String key = String(externalKey);
+      String id = String(sensorId);
+
+      if (key == "pir_motion") {
+        motionSensorId = id;
+        logSensorMapping("motion", motionSensorId);
+      } else if (key == "flame_sensor") {
+        flameSensorId = id;
+        logSensorMapping("flame", flameSensorId);
+      } else if (key == "reed_door") {
+        doorSensorId = id;
+        logSensorMapping("door", doorSensorId);
+      } else if (key == "gas_smoke") {
+        gasSmokeSensorId = id;
+        logSensorMapping("gas_smoke", gasSmokeSensorId);
+      }
+    }
+
+    if (!sensorIdsReady()) {
+      logLine("Sensor sync failed. One or more backend sensor IDs are missing.");
+      return false;
+    }
+
     logLine("Device sensors synced.");
     return true;
   }
-
-  StaticJsonDocument<512> responseBody;
-  DeserializationError error = deserializeJson(responseBody, response);
 
   if (!error) {
     const char* message =
