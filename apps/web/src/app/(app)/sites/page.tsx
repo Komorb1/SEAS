@@ -95,7 +95,11 @@ export default async function SitesPage({ searchParams }: SitesPageProps) {
       include: {
         _count: {
           select: {
-            devices: true,
+            devices: {
+              where: {
+                is_deleted: false,
+              },
+            },
           },
         },
       },

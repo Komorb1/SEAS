@@ -115,6 +115,7 @@ export default async function DashboardPage() {
     ] = await Promise.all([
       prisma.site.count({
         where: {
+          is_deleted: false,
           site_users: {
             some: {
               user_id: userId,
@@ -125,6 +126,7 @@ export default async function DashboardPage() {
 
       prisma.device.findMany({
         where: {
+          is_deleted: false,
           site: {
             site_users: {
               some: {

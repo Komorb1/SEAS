@@ -48,11 +48,12 @@ IPAddress apIP(192, 168, 4, 1);
 
 WebServer server(80);
 DNSServer dnsServer;
-Preferences prefs;
-
 String savedSsid;
 String savedPassword;
 String deviceSecret;
+
+String deviceToken = "";
+unsigned long deviceTokenExpiresAt = 0;
 
 bool setupPortalActive = false;
 bool hasProvisionedThisBoot = false;
@@ -83,6 +84,7 @@ void initHardware() {
 // Wi-Fi credential storage
 // =====================
 void loadCredentials() {
+  Preferences prefs;
   prefs.begin("wifi", true);
   savedSsid = prefs.getString("ssid", "");
   savedPassword = prefs.getString("password", "");
@@ -96,6 +98,7 @@ void loadCredentials() {
 }
 
 void saveCredentials(const String& ssid, const String& password) {
+  Preferences prefs;
   prefs.begin("wifi", false);
   prefs.putString("ssid", ssid);
   prefs.putString("password", password);
@@ -108,6 +111,7 @@ void saveCredentials(const String& ssid, const String& password) {
 }
 
 void clearCredentials() {
+  Preferences prefs;
   prefs.begin("wifi", false);
   prefs.clear();
   prefs.end();
@@ -121,19 +125,23 @@ void clearCredentials() {
 // =====================
 // Device secret storage
 // =====================
-void loadDeviceSecret() {
+bool loadDeviceSecret() {
+  Preferences prefs;
   prefs.begin("device", true);
   deviceSecret = prefs.getString("secret", "");
   prefs.end();
 
   if (deviceSecret.length()) {
     logLine("Device secret found. Provisioning skipped.");
-  } else {
-    logLine("No device secret found. Provisioning required.");
+    return true;
   }
+
+  logLine("No device secret found. Provisioning required.");
+  return false;
 }
 
 void saveDeviceSecret(const String& secret) {
+  Preferences prefs;
   prefs.begin("device", false);
   prefs.putString("secret", secret);
   prefs.end();
@@ -144,11 +152,14 @@ void saveDeviceSecret(const String& secret) {
 }
 
 void clearDeviceSecret() {
+  Preferences prefs;
   prefs.begin("device", false);
   prefs.clear();
   prefs.end();
 
   deviceSecret = "";
+  deviceToken = "";
+  deviceTokenExpiresAt = 0;
 
   logLine("Device secret cleared.");
 }
@@ -157,7 +168,7 @@ void clearDeviceSecret() {
 // Captive portal HTML
 // =====================
 String htmlPage(const String& message = "") {
-  return R"rawliteral(
+  return String(R"rawliteral(
 <!DOCTYPE html>
 <html>
 <head>
@@ -177,8 +188,9 @@ String htmlPage(const String& message = "") {
   <div class="card">
     <h2>SEAS Wi-Fi Setup</h2>
     <p>Enter Wi-Fi credentials for this ESP32 device.</p>
-    <p class="small">Device serial: SEAS-ESP32-0001</p>
-)rawliteral" +
+    )rawliteral") +
+  "<p class='small'>Device serial: " + String(DEVICE_SERIAL) + "</p>" +
+
   (message.length() ? "<p class='msg'>" + message + "</p>" : "") +
 R"rawliteral(
     <form action="/save" method="POST">
@@ -233,7 +245,7 @@ bool connectToWifi() {
 }
 
 // =====================
-// Backend provisioning
+// Backend provisioning and authentication
 // =====================
 bool provisionDevice() {
   if (hasProvisionedThisBoot) {
@@ -247,9 +259,9 @@ bool provisionDevice() {
     return false;
   }
 
-  loadDeviceSecret();
+  logLine("Checking device provisioning...");
 
-  if (deviceSecret.length()) {
+  if (loadDeviceSecret()) {
     return true;
   }
 
@@ -261,6 +273,7 @@ bool provisionDevice() {
   logLine("Endpoint: " + url);
 
   http.begin(url);
+  http.setTimeout(7000);
   http.addHeader("Content-Type", "application/json");
 
   StaticJsonDocument<256> requestBody;
@@ -278,6 +291,7 @@ bool provisionDevice() {
   }
 
   String response = http.getString();
+  http.end();
 
   logLine("Provision response code: " + String(httpCode));
 
@@ -286,7 +300,6 @@ bool provisionDevice() {
 
   if (error) {
     logLine("Provision response JSON parse failed.");
-    http.end();
     return false;
   }
 
@@ -299,12 +312,10 @@ bool provisionDevice() {
 
     if (!strlen(secret)) {
       logLine("Provision response missing device secret.");
-      http.end();
       return false;
     }
 
     saveDeviceSecret(String(secret));
-    http.end();
 
     logLine("Provisioning successful.");
     return true;
@@ -316,8 +327,195 @@ bool provisionDevice() {
     "Unknown provisioning error";
 
   logLine("Provisioning failed: " + String(message));
+  return false;
+}
 
+bool authenticateDevice() {
+  if (WiFi.status() != WL_CONNECTED) {
+    logLine("Authentication skipped. Wi-Fi not connected.");
+    return false;
+  }
+
+  if (!deviceSecret.length()) {
+    logLine("Authentication skipped. Device secret is missing.");
+    return false;
+  }
+
+  HTTPClient http;
+  String url = String(BACKEND_BASE_URL) + "/api/devices/auth";
+
+  logLine("Authenticating device...");
+  logLine("Endpoint: " + url);
+
+  http.begin(url);
+  http.setTimeout(7000);
+  http.addHeader("Content-Type", "application/json");
+
+  StaticJsonDocument<256> requestBody;
+  requestBody["serial_number"] = DEVICE_SERIAL;
+  requestBody["secret"] = deviceSecret;
+
+  String payload;
+  serializeJson(requestBody, payload);
+
+  int httpCode = http.POST(payload);
+
+  if (httpCode <= 0) {
+    logLine("Auth request failed: " + http.errorToString(httpCode));
+    http.end();
+    return false;
+  }
+
+  String response = http.getString();
   http.end();
+
+  logLine("Auth response code: " + String(httpCode));
+
+  StaticJsonDocument<768> responseBody;
+  DeserializationError error = deserializeJson(responseBody, response);
+
+  if (error) {
+    logLine("Auth response JSON parse failed.");
+    return false;
+  }
+
+  if (httpCode >= 200 && httpCode < 300) {
+    const char* token =
+      responseBody["device_token"] |
+      responseBody["deviceToken"] |
+      responseBody["token"] |
+      "";
+
+    int expiresInSeconds =
+      responseBody["expires_in_seconds"] |
+      responseBody["expiresInSeconds"] |
+      900;
+
+    if (!strlen(token)) {
+      logLine("Auth response missing device token.");
+      return false;
+    }
+
+    if (expiresInSeconds < 60) {
+      expiresInSeconds = 900;
+    }
+
+    deviceToken = String(token);
+    deviceTokenExpiresAt = millis() + ((unsigned long)(expiresInSeconds - 30) * 1000UL);
+
+    logLine("Device authenticated.");
+    logLine("Token expires in: " + String(expiresInSeconds) + " seconds.");
+
+    return true;
+  }
+
+  const char* message =
+    responseBody["error"] |
+    responseBody["message"] |
+    "Unknown authentication error";
+
+  logLine("Authentication failed: " + String(message));
+  return false;
+}
+
+bool ensureDeviceAuthenticated() {
+  if (WiFi.status() != WL_CONNECTED) {
+    logLine("Authentication skipped. Wi-Fi not connected.");
+    return false;
+  }
+
+  if (!deviceToken.length() || millis() > deviceTokenExpiresAt) {
+    return authenticateDevice();
+  }
+
+  return true;
+}
+
+bool syncDeviceSensors() {
+  if (WiFi.status() != WL_CONNECTED) {
+    logLine("Sensor sync skipped. Wi-Fi not connected.");
+    return false;
+  }
+
+  if (!ensureDeviceAuthenticated()) {
+    logLine("Sensor sync skipped. Device authentication failed.");
+    return false;
+  }
+
+  HTTPClient http;
+  String url = String(BACKEND_BASE_URL) + "/api/devices/sensors/sync";
+
+  logLine("Syncing device sensors...");
+  logLine("Endpoint: " + url);
+
+  http.begin(url);
+  http.setTimeout(7000);
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("Authorization", "Bearer " + deviceToken);
+
+  StaticJsonDocument<1024> requestBody;
+  JsonArray sensors = requestBody.createNestedArray("sensors");
+
+  JsonObject motionSensor = sensors.createNestedObject();
+  motionSensor["external_key"] = "pir_motion";
+  motionSensor["sensor_type"] = "motion";
+  motionSensor["location_label"] = "PIR motion sensor";
+
+  JsonObject flameSensor = sensors.createNestedObject();
+  flameSensor["external_key"] = "flame_sensor";
+  flameSensor["sensor_type"] = "flame";
+  flameSensor["location_label"] = "Flame sensor";
+
+  JsonObject doorSensor = sensors.createNestedObject();
+  doorSensor["external_key"] = "reed_door";
+  doorSensor["sensor_type"] = "door";
+  doorSensor["location_label"] = "Reed door sensor";
+
+  JsonObject gasSensor = sensors.createNestedObject();
+  gasSensor["external_key"] = "gas_smoke";
+  gasSensor["sensor_type"] = "gas";
+  gasSensor["location_label"] = "Gas and smoke sensor";
+
+  String payload;
+  serializeJson(requestBody, payload);
+
+  int httpCode = http.POST(payload);
+
+  if (httpCode <= 0) {
+    logLine("Sensor sync request failed: " + http.errorToString(httpCode));
+    http.end();
+    return false;
+  }
+
+  String response = http.getString();
+  http.end();
+
+  logLine("Sensor sync response code: " + String(httpCode));
+
+  if (httpCode >= 200 && httpCode < 300) {
+    logLine("Device sensors synced.");
+    return true;
+  }
+
+  StaticJsonDocument<512> responseBody;
+  DeserializationError error = deserializeJson(responseBody, response);
+
+  if (!error) {
+    const char* message =
+      responseBody["error"] |
+      responseBody["message"] |
+      "Unknown sensor sync error";
+
+    logLine("Sensor sync failed: " + String(message));
+  } else {
+    logLine("Sensor sync failed.");
+  }
+
+  if (httpCode == 401) {
+    deviceToken = "";
+    deviceTokenExpiresAt = 0;
+  }
+
   return false;
 }
 
@@ -495,7 +693,15 @@ void setup() {
 
   logLine("Normal mode started.");
 
-  provisionDevice();
+  if (provisionDevice()) {
+    if (ensureDeviceAuthenticated()) {
+      syncDeviceSensors();
+    } else {
+      logLine("Device authentication not completed.");
+    }
+  } else {
+    logLine("Device provisioning not completed.");
+  }
 }
 
 void loop() {
