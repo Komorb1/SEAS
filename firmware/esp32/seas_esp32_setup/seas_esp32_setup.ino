@@ -55,6 +55,9 @@ String deviceSecret;
 String deviceToken = "";
 unsigned long deviceTokenExpiresAt = 0;
 
+const unsigned long READING_SEND_INTERVAL_MS = 5000;
+unsigned long lastReadingSend = 0;
+
 // Backend sensor IDs returned by /api/devices/sensors/sync
 String motionSensorId = "";
 String flameSensorId = "";
@@ -584,6 +587,112 @@ bool syncDeviceSensors() {
   return false;
 }
 
+
+// =====================
+// Backend readings
+// =====================
+bool sendSensorReading(const String& sensorName, const String& sensorId, int value, const String& unit) {
+  if (WiFi.status() != WL_CONNECTED) {
+    logLine("Reading skipped for " + sensorName + ". Wi-Fi not connected.");
+    return false;
+  }
+
+  if (!sensorId.length()) {
+    logLine("Reading skipped for " + sensorName + ". Backend sensor ID missing.");
+    return false;
+  }
+
+  if (!ensureDeviceAuthenticated()) {
+    logLine("Reading skipped for " + sensorName + ". Device authentication failed.");
+    return false;
+  }
+
+  HTTPClient http;
+  String url = String(BACKEND_BASE_URL) + "/api/readings";
+
+  http.begin(url);
+  http.setTimeout(7000);
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("Authorization", "Bearer " + deviceToken);
+
+  StaticJsonDocument<256> requestBody;
+  requestBody["sensor_id"] = sensorId;
+  requestBody["value"] = value;
+  requestBody["unit"] = unit;
+  requestBody["quality_flag"] = "ok";
+
+  String payload;
+  serializeJson(requestBody, payload);
+
+  int httpCode = http.POST(payload);
+
+  if (httpCode <= 0) {
+    logLine("Reading request failed for " + sensorName + ": " + http.errorToString(httpCode));
+    http.end();
+    return false;
+  }
+
+  String response = http.getString();
+  http.end();
+
+  if (httpCode >= 200 && httpCode < 300) {
+    logLine("Reading sent: " + sensorName + " = " + String(value));
+    return true;
+  }
+
+  logLine("Reading failed for " + sensorName + ". HTTP " + String(httpCode));
+
+  if (response.length()) {
+    logLine("Reading error response: " + response);
+  }
+
+  if (httpCode == 401) {
+    deviceToken = "";
+    deviceTokenExpiresAt = 0;
+  }
+
+  return false;
+}
+
+void sendAllSensorReadings() {
+  if (WiFi.status() != WL_CONNECTED) {
+    logLine("Readings skipped. Wi-Fi not connected.");
+    return;
+  }
+
+  if (!ensureDeviceAuthenticated()) {
+    logLine("Readings skipped. Device authentication failed.");
+    return;
+  }
+
+  if (!sensorIdsReady()) {
+    logLine("Sensor IDs not ready. Trying sensor sync before readings.");
+
+    if (!syncDeviceSensors()) {
+      logLine("Readings skipped. Sensor IDs are still not ready.");
+      return;
+    }
+  }
+
+  bool motionDetected = digitalRead(PIR_PIN) == HIGH;
+  bool flameDetected = digitalRead(FLAME_PIN) == LOW;
+  bool doorClosed = digitalRead(REED_PIN) == LOW;
+  bool gasDetected = digitalRead(GAS_PIN) == LOW;
+
+  bool allSent = true;
+
+  allSent &= sendSensorReading("motion", motionSensorId, motionDetected ? 1 : 0, "boolean");
+  allSent &= sendSensorReading("flame", flameSensorId, flameDetected ? 1 : 0, "boolean");
+  allSent &= sendSensorReading("door", doorSensorId, doorClosed ? 0 : 1, "boolean");
+  allSent &= sendSensorReading("gas_smoke", gasSmokeSensorId, gasDetected ? 1 : 0, "boolean");
+
+  if (allSent) {
+    logLine("All sensor readings sent.");
+  } else {
+    logLine("One or more sensor readings failed.");
+  }
+}
+
 // =====================
 // Setup portal
 // =====================
@@ -789,5 +898,10 @@ void loop() {
   if (millis() - lastSensorRead >= 1000) {
     lastSensorRead = millis();
     readLocalSensors();
+  }
+
+  if (millis() - lastReadingSend >= READING_SEND_INTERVAL_MS) {
+    lastReadingSend = millis();
+    sendAllSensorReadings();
   }
 }
