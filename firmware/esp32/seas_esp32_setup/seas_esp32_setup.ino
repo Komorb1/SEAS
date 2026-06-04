@@ -2,6 +2,8 @@
 #include <WebServer.h>
 #include <DNSServer.h>
 #include <Preferences.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
 
 // =====================
 // SEAS hardware pins
@@ -14,12 +16,26 @@
 #define REED_PIN 23
 #define GAS_PIN 34
 
-// BOOT button on most ESP32 boards
+// BOOT button on most ESP32 dev boards
 #define SETUP_BUTTON_PIN 0
 
 // Buzzer module is active-LOW:
 // LOW = ON, HIGH = OFF
 const bool BUZZER_ENABLED = false;
+
+// =====================
+// Device provisioning
+// =====================
+const char* DEVICE_SERIAL = "SEAS-ESP32-0001";
+
+// IMPORTANT:
+// For deployed backend:
+// const char* BACKEND_BASE_URL = "https://your-domain.com";
+//
+// For local backend, use your laptop LAN IP, not localhost:
+// const char* BACKEND_BASE_URL = "http://192.168.1.50:3000";
+
+const char* BACKEND_BASE_URL = "http://10.157.121.162:3000";
 
 // =====================
 // Wi-Fi setup portal
@@ -36,7 +52,10 @@ Preferences prefs;
 
 String savedSsid;
 String savedPassword;
+String deviceSecret;
+
 bool setupPortalActive = false;
+bool hasProvisionedThisBoot = false;
 
 // =====================
 // Helpers
@@ -60,44 +79,9 @@ void initHardware() {
   digitalWrite(BUZZER_PIN, HIGH); // OFF
 }
 
-String htmlPage(const String& message = "") {
-  return R"rawliteral(
-<!DOCTYPE html>
-<html>
-<head>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>SEAS Wi-Fi Setup</title>
-  <style>
-    body { font-family: Arial, sans-serif; margin: 24px; background: #f3f4f6; }
-    .card { max-width: 420px; margin: auto; background: white; padding: 20px; border-radius: 12px; }
-    input, button { width: 100%; padding: 12px; margin-top: 10px; box-sizing: border-box; }
-    button { background: #111827; color: white; border: 0; border-radius: 8px; cursor: pointer; }
-    .danger { background: #991b1b; }
-    .msg { color: #166534; margin-bottom: 12px; }
-  </style>
-</head>
-<body>
-  <div class="card">
-    <h2>SEAS Wi-Fi Setup</h2>
-    <p>Enter Wi-Fi credentials for this ESP32 device.</p>
-)rawliteral" +
-  (message.length() ? "<p class='msg'>" + message + "</p>" : "") +
-R"rawliteral(
-    <form action="/save" method="POST">
-      <input name="ssid" placeholder="Wi-Fi SSID" required>
-      <input name="password" placeholder="Wi-Fi Password" type="password">
-      <button type="submit">Save and Restart</button>
-    </form>
-
-    <form action="/reset" method="POST">
-      <button class="danger" type="submit">Clear Saved Wi-Fi</button>
-    </form>
-  </div>
-</body>
-</html>
-)rawliteral";
-}
-
+// =====================
+// Wi-Fi credential storage
+// =====================
 void loadCredentials() {
   prefs.begin("wifi", true);
   savedSsid = prefs.getString("ssid", "");
@@ -117,6 +101,9 @@ void saveCredentials(const String& ssid, const String& password) {
   prefs.putString("password", password);
   prefs.end();
 
+  savedSsid = ssid;
+  savedPassword = password;
+
   logLine("Wi-Fi credentials saved.");
 }
 
@@ -125,9 +112,97 @@ void clearCredentials() {
   prefs.clear();
   prefs.end();
 
+  savedSsid = "";
+  savedPassword = "";
+
   logLine("Wi-Fi credentials cleared.");
 }
 
+// =====================
+// Device secret storage
+// =====================
+void loadDeviceSecret() {
+  prefs.begin("device", true);
+  deviceSecret = prefs.getString("secret", "");
+  prefs.end();
+
+  if (deviceSecret.length()) {
+    logLine("Device secret found. Provisioning skipped.");
+  } else {
+    logLine("No device secret found. Provisioning required.");
+  }
+}
+
+void saveDeviceSecret(const String& secret) {
+  prefs.begin("device", false);
+  prefs.putString("secret", secret);
+  prefs.end();
+
+  deviceSecret = secret;
+
+  logLine("Device secret saved.");
+}
+
+void clearDeviceSecret() {
+  prefs.begin("device", false);
+  prefs.clear();
+  prefs.end();
+
+  deviceSecret = "";
+
+  logLine("Device secret cleared.");
+}
+
+// =====================
+// Captive portal HTML
+// =====================
+String htmlPage(const String& message = "") {
+  return R"rawliteral(
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SEAS Wi-Fi Setup</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; background: #f3f4f6; }
+    .card { max-width: 420px; margin: auto; background: white; padding: 20px; border-radius: 12px; }
+    input, button { width: 100%; padding: 12px; margin-top: 10px; box-sizing: border-box; }
+    button { background: #111827; color: white; border: 0; border-radius: 8px; cursor: pointer; }
+    .danger { background: #991b1b; }
+    .msg { color: #166534; margin-bottom: 12px; }
+    .small { color: #6b7280; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h2>SEAS Wi-Fi Setup</h2>
+    <p>Enter Wi-Fi credentials for this ESP32 device.</p>
+    <p class="small">Device serial: SEAS-ESP32-0001</p>
+)rawliteral" +
+  (message.length() ? "<p class='msg'>" + message + "</p>" : "") +
+R"rawliteral(
+    <form action="/save" method="POST">
+      <input name="ssid" placeholder="Wi-Fi SSID" required>
+      <input name="password" placeholder="Wi-Fi Password" type="password">
+      <button type="submit">Save and Restart</button>
+    </form>
+
+    <form action="/reset-wifi" method="POST">
+      <button class="danger" type="submit">Clear Saved Wi-Fi</button>
+    </form>
+
+    <form action="/reset-device" method="POST">
+      <button class="danger" type="submit">Clear Device Secret</button>
+    </form>
+  </div>
+</body>
+</html>
+)rawliteral";
+}
+
+// =====================
+// Wi-Fi connection
+// =====================
 bool connectToWifi() {
   if (!savedSsid.length()) {
     return false;
@@ -157,6 +232,98 @@ bool connectToWifi() {
   return false;
 }
 
+// =====================
+// Backend provisioning
+// =====================
+bool provisionDevice() {
+  if (hasProvisionedThisBoot) {
+    return deviceSecret.length() > 0;
+  }
+
+  hasProvisionedThisBoot = true;
+
+  if (WiFi.status() != WL_CONNECTED) {
+    logLine("Provisioning skipped. Wi-Fi not connected.");
+    return false;
+  }
+
+  loadDeviceSecret();
+
+  if (deviceSecret.length()) {
+    return true;
+  }
+
+  HTTPClient http;
+  String url = String(BACKEND_BASE_URL) + "/api/devices/provision";
+
+  logLine("Provisioning device...");
+  logLine("Serial: " + String(DEVICE_SERIAL));
+  logLine("Endpoint: " + url);
+
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+
+  StaticJsonDocument<256> requestBody;
+  requestBody["serial_number"] = DEVICE_SERIAL;
+
+  String payload;
+  serializeJson(requestBody, payload);
+
+  int httpCode = http.POST(payload);
+
+  if (httpCode <= 0) {
+    logLine("Provision request failed: " + http.errorToString(httpCode));
+    http.end();
+    return false;
+  }
+
+  String response = http.getString();
+
+  logLine("Provision response code: " + String(httpCode));
+
+  StaticJsonDocument<768> responseBody;
+  DeserializationError error = deserializeJson(responseBody, response);
+
+  if (error) {
+    logLine("Provision response JSON parse failed.");
+    http.end();
+    return false;
+  }
+
+  if (httpCode >= 200 && httpCode < 300) {
+    const char* secret =
+      responseBody["device_secret"] |
+      responseBody["deviceSecret"] |
+      responseBody["secret"] |
+      "";
+
+    if (!strlen(secret)) {
+      logLine("Provision response missing device secret.");
+      http.end();
+      return false;
+    }
+
+    saveDeviceSecret(String(secret));
+    http.end();
+
+    logLine("Provisioning successful.");
+    return true;
+  }
+
+  const char* message =
+    responseBody["error"] |
+    responseBody["message"] |
+    "Unknown provisioning error";
+
+  logLine("Provisioning failed: " + String(message));
+
+  http.end();
+  return false;
+}
+
+// =====================
+// Setup portal
+// =====================
 void startSetupPortal() {
   setupPortalActive = true;
 
@@ -164,7 +331,15 @@ void startSetupPortal() {
 
   WiFi.mode(WIFI_AP);
   WiFi.softAPConfig(apIP, apIP, IPAddress(255, 255, 255, 0));
-  WiFi.softAP(AP_SSID, AP_PASSWORD);
+
+  bool apStarted = WiFi.softAP(AP_SSID, AP_PASSWORD);
+
+  if (apStarted) {
+    logLine("Setup AP started successfully.");
+    logLine("AP IP address: " + WiFi.softAPIP().toString());
+  } else {
+    logLine("Setup AP failed to start.");
+  }
 
   dnsServer.start(DNS_PORT, "*", apIP);
 
@@ -182,15 +357,26 @@ void startSetupPortal() {
     }
 
     saveCredentials(ssid, password);
-    server.send(200, "text/html", htmlPage("Saved. Device will restart now."));
+
+    server.send(200, "text/html", htmlPage("Wi-Fi saved. Device will restart now."));
 
     delay(1500);
     ESP.restart();
   });
 
-  server.on("/reset", HTTP_POST, []() {
+  server.on("/reset-wifi", HTTP_POST, []() {
     clearCredentials();
+
     server.send(200, "text/html", htmlPage("Saved Wi-Fi cleared. Restarting."));
+
+    delay(1500);
+    ESP.restart();
+  });
+
+  server.on("/reset-device", HTTP_POST, []() {
+    clearDeviceSecret();
+
+    server.send(200, "text/html", htmlPage("Device secret cleared. Restarting."));
 
     delay(1500);
     ESP.restart();
@@ -209,6 +395,18 @@ void startSetupPortal() {
 }
 
 // =====================
+// Sensor state tracking
+// =====================
+bool hasLastState = false;
+
+bool lastMotionDetected = false;
+bool lastFlameDetected = false;
+bool lastDoorClosed = false;
+bool lastGasDetected = false;
+bool lastAlert = false;
+bool lastWifiConnected = false;
+
+// =====================
 // Sensor logic
 // =====================
 void readLocalSensors() {
@@ -216,8 +414,8 @@ void readLocalSensors() {
   bool flameDetected = digitalRead(FLAME_PIN) == LOW;
   bool doorClosed = digitalRead(REED_PIN) == LOW;
   bool gasDetected = digitalRead(GAS_PIN) == LOW;
-
   bool alert = motionDetected || flameDetected || !doorClosed || gasDetected;
+  bool wifiConnected = WiFi.status() == WL_CONNECTED;
 
   digitalWrite(LED_PIN, alert ? HIGH : LOW);
 
@@ -227,10 +425,31 @@ void readLocalSensors() {
     digitalWrite(BUZZER_PIN, HIGH); // keep OFF
   }
 
-  Serial.println("------ SEAS STATUS ------");
+  bool changed =
+    !hasLastState ||
+    motionDetected != lastMotionDetected ||
+    flameDetected != lastFlameDetected ||
+    doorClosed != lastDoorClosed ||
+    gasDetected != lastGasDetected ||
+    alert != lastAlert ||
+    wifiConnected != lastWifiConnected;
+
+  if (!changed) {
+    return;
+  }
+
+  lastMotionDetected = motionDetected;
+  lastFlameDetected = flameDetected;
+  lastDoorClosed = doorClosed;
+  lastGasDetected = gasDetected;
+  lastAlert = alert;
+  lastWifiConnected = wifiConnected;
+  hasLastState = true;
+
+  Serial.println("------ SEAS STATUS CHANGED ------");
 
   Serial.print("Wi-Fi: ");
-  Serial.println(WiFi.status() == WL_CONNECTED ? "CONNECTED" : "NOT CONNECTED");
+  Serial.println(wifiConnected ? "CONNECTED" : "NOT CONNECTED");
 
   Serial.print("Door: ");
   Serial.println(doorClosed ? "CLOSED" : "OPEN");
@@ -275,6 +494,8 @@ void setup() {
   }
 
   logLine("Normal mode started.");
+
+  provisionDevice();
 }
 
 void loop() {
@@ -282,8 +503,8 @@ void loop() {
     dnsServer.processNextRequest();
     server.handleClient();
 
-    // Keep local safety behavior running even during setup mode
     static unsigned long lastSetupSensorRead = 0;
+
     if (millis() - lastSetupSensorRead >= 1000) {
       lastSetupSensorRead = millis();
       readLocalSensors();
