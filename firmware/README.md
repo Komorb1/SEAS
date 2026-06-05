@@ -6,19 +6,124 @@ This folder contains the device-layer work for the **Smart Emergency Alert Syste
 
 The firmware side of SEAS represents the behavior of field devices that monitor environmental and security conditions, report readings to the backend, and participate in the end-to-end emergency alert workflow.
 
-In the full system vision, the firmware layer is expected to handle:
+The firmware layer handles:
 
 - sensor reading and device-side monitoring
 - communication with the SEAS backend
 - alert-triggering input delivery to the platform
-- future local device reactions such as buzzer or LED alerts
-- future resilience features such as offline buffering and recovery
+- physical ESP32 device integration
+- virtual device simulation for repeatable testing
+- local device reactions such as buzzer or LED alerts
+- resilience features such as offline buffering and recovery
 
 ## Current Implementation
 
-At the current stage of the project, the firmware layer is represented by a **lightweight Python simulator** rather than a fully deployed ESP32 firmware implementation.
+At the final project stage, the firmware layer includes **two device implementations**:
 
-This simulator acts as a virtual SEAS device and is used to validate the vertical slice between the device layer and the SEAS backend.
+1. a physical **ESP32 firmware demo** used for the real hardware presentation
+2. a lightweight **Python simulator** used for repeatable backend and alert-flow testing
+
+The ESP32 firmware validates the real device-to-backend workflow, while the Python simulator remains useful for testing scenarios without depending on hardware availability.
+
+Both implementations follow the same core workflow:
+
+1. register or provision a device
+2. authenticate the device through `/api/devices/auth`
+3. synchronize sensors through `/api/devices/sensors/sync`
+4. submit readings through `/api/readings`
+5. allow the backend to create emergency alerts when readings match alert rules
+
+## Physical ESP32 Firmware
+
+The physical ESP32 firmware is located under:
+
+```text
+firmware/esp32/seas_esp32_setup/seas_esp32_setup.ino
+```
+
+The ESP32 demo supports:
+
+- Wi-Fi connection and normal runtime mode
+- stored device secret reuse after provisioning
+- device authentication with the backend
+- backend sensor synchronization
+- mapping returned backend `sensor_id` values to local ESP32 sensors
+- periodic sensor reading submission
+- serial monitor logging for provisioning, authentication, sync, readings, and failures
+- physical sensor testing for emergency alert generation
+
+### ESP32 Pin Configuration
+
+The final physical demo uses the following ESP32 pin setup:
+
+| Component | Pin | Logic |
+|---|---:|---|
+| LED | GPIO 4 | Turns on during alert state |
+| Buzzer module | GPIO 18 | Active-LOW, currently disabled in firmware |
+| PIR motion sensor | GPIO 21 | HIGH means motion detected |
+| Flame sensor | GPIO 22 | LOW means flame detected |
+| Reed door sensor | GPIO 23 | LOW means door closed, using `INPUT_PULLUP` |
+| Gas/smoke digital sensor | GPIO 34 | LOW means gas/smoke detected |
+
+### Physical Sensors
+
+The ESP32 synchronizes these physical sensors with the backend:
+
+| Local sensor | Backend sensor type | Meaning |
+|---|---|---|
+| PIR motion sensor | `motion` | Detects movement |
+| Flame sensor | `flame` | Detects fire/flame |
+| Reed switch | `door` | Detects open/closed door state |
+| Gas/smoke sensor | `gas_smoke` | Detects gas or smoke threshold state |
+
+The physical demo sends boolean-style readings:
+
+| Value | Meaning |
+|---:|---|
+| `0` | normal, inactive, or safe state |
+| `1` | detected, abnormal, or alert-relevant state |
+
+For display purposes, the web app converts these raw values into readable labels such as **No motion**, **Door closed**, **No flame**, **Normal**, **Motion detected**, **Door open**, **Flame detected**, and **Gas/smoke detected**.
+
+### ESP32 Runtime Flow
+
+The ESP32 firmware follows this runtime sequence:
+
+1. connect to Wi-Fi
+2. check if a device secret already exists
+3. provision only when needed
+4. authenticate the device
+5. sync physical sensors with the backend
+6. store returned backend `sensor_id` values
+7. submit readings for motion, flame, door, and gas/smoke sensors
+8. repeat reading submission at the configured interval
+
+The ESP32 does not submit readings until authentication succeeds and all required backend sensor IDs are available.
+
+### Alert Behavior
+
+Alert creation is handled by the backend after readings are submitted.
+
+The final project logic separates safety alerts from security alerts:
+
+| Sensor event | Security mode | Result |
+|---|---|---|
+| Flame detected | armed or disarmed | Critical fire alert |
+| Gas/smoke detected | armed or disarmed | Critical gas/smoke alert |
+| Motion detected | disarmed | Reading only, no intrusion alert |
+| Door opened | disarmed | Reading only, no intrusion alert |
+| Motion detected | armed | High intrusion alert |
+| Door opened | armed | High intrusion alert |
+
+The web app provides an **Arm Site / Disarm Site** action on the site details page. This allows the user to control whether motion and door activity should be treated as intrusion events.
+
+### Online and Offline Behavior
+
+When the ESP32 submits readings successfully, the backend updates the device status and last-seen time. If the device stops sending readings, the backend/device status fallback can mark it offline after the configured timeout. When the ESP32 reconnects and sends readings again, the device returns online.
+
+## Python Simulator
+
+The Python simulator acts as a virtual SEAS device and is used to validate the vertical slice between the device layer and the SEAS backend.
 
 The simulator currently supports:
 
@@ -30,9 +135,12 @@ The simulator currently supports:
 - intentional abnormal scenario triggering for alert and notification testing
 - clear terminal logging for authentication, synchronization, reading submission, and failures
 
-This approach allows fast and reliable end-to-end testing of the backend, alert generation logic, and web/PWA workflow without being blocked by hardware availability or simulator limitations.
+This approach allows fast and reliable end-to-end testing of the backend, alert generation logic, and web/PWA workflow without being blocked by hardware availability.
 
 ## Current Files
+
+- `esp32/seas_esp32_setup/seas_esp32_setup.ino`  
+  Physical ESP32 firmware used for the final hardware demo.
 
 - `simulator.py`  
   Standalone Python script that simulates a virtual SEAS device.
@@ -80,7 +188,7 @@ The simulator supports the following scenarios:
 
 ## Configuration
 
-Create a local `config.json` file inside `firmware/` based on `config.json`.
+Create a local `config.json` file inside `firmware/` based on `config.example.json`.
 
 Example structure:
 
@@ -146,17 +254,17 @@ Each sensor entry supports:
 
 ## Sensor Synchronization
 
-The simulator does **not** require manually copying backend `sensor_id` values into `config.json`.
+The simulator and ESP32 firmware do **not** require manually copying backend `sensor_id` values into configuration or firmware code.
 
 Instead, the workflow is:
 
-1. start the simulator
+1. start the device implementation
 2. provision the device if needed
 3. authenticate the device
 4. sync the configured sensors with the backend
 5. submit readings using the returned sensor IDs
 
-This makes the simulator more practical for repeated PWA and integration testing.
+This makes the simulator and physical ESP32 firmware more practical for repeated PWA, backend, and integration testing.
 
 ## Running the Simulator
 
@@ -217,6 +325,8 @@ These logs include:
 - backend success or failure responses
 - abnormal event creation feedback
 
+The physical ESP32 firmware provides equivalent runtime visibility through the Arduino Serial Monitor.
+
 ## Why a Python Simulator Was Used
 
 A Python simulator was selected for the first firmware vertical slice because it offers:
@@ -227,22 +337,21 @@ A Python simulator was selected for the first firmware vertical slice because it
 - easier debugging during backend integration
 - a practical path for validating the full SEAS alert workflow early in development
 
-This makes it well suited for the current project phase, where the priority is proving the device-to-backend pipeline before moving into a more complete hardware-oriented implementation.
+This made it well suited for the early project phase, where the priority was proving the device-to-backend pipeline before moving into the physical ESP32 implementation.
 
-## Wokwi-Based Simulation Note
-
-Because Wokwi provides limited direct support for some of the required sensors, fire, gas or smoke, and motion inputs can be represented using equivalent virtual components. An analog potentiometer can be used to simulate changing gas concentration values, while pushbuttons can be used to simulate binary flame and motion events. This makes it possible to validate device logic, backend event generation, and end-to-end alert workflows in a controlled environment without relying on physical hardware.
+The simulator remains useful even after the physical ESP32 demo because it provides repeatable software-only testing for normal, fire, gas, and intrusion scenarios.
 
 ## Next Steps
 
 Planned future firmware work may include:
 
 - richer simulated sensor combinations and scenario presets
-- local device alert behavior such as LED or buzzer output
+- local device alert behavior such as buzzer output
 - offline buffering and replay of unsent readings
-- migration from the software simulator toward real ESP32-based firmware
+- storing Wi-Fi credentials through a cleaner setup flow
 - closer parity between simulator behavior and physical device logic
+- optional analog gas/smoke value calibration instead of boolean threshold readings
 
 ## Summary
 
-The current firmware folder establishes a working device-layer vertical slice for SEAS. Using a lightweight simulator, the project can provision a virtual device, authenticate it, synchronize sensors, submit simulated readings, and trigger backend alert logic successfully. This provides a strong foundation for future expansion into richer simulation and real embedded implementation.
+The firmware folder now establishes both a working physical ESP32 demo and a repeatable simulator-based device layer for SEAS. The project can provision or reuse a device secret, authenticate with the backend, synchronize sensors, submit readings, update device online status, and trigger backend alert logic successfully. The physical ESP32 implementation demonstrates the real hardware path, while the simulator remains useful for controlled testing and future development.
